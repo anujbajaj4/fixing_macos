@@ -147,8 +147,13 @@ private final class ScreenLayer {
 final class WindowButtonsOverlay: NSObject {
     private var panels: [ScreenLayer] = []
     private var timer: Timer?
-    private var thumbnails: [Thumbnail] = []
+    private var thumbnails: [Thumbnail] = []        // the ones that get buttons
     private var previousFrames: [CGRect] = []
+    /// Does a thumbnail (by app + title) have exactly one real, visible window behind it?
+    /// Checked off the main thread; no buttons until the answer is yes.
+    private var verdicts: [String: Bool] = [:]
+    private var checking = false
+    private var logged: Set<String> = []
     private var thumbnailsRead = Date.distantPast
     private var shown = false
     private var loggedOnce = false
@@ -167,6 +172,8 @@ final class WindowButtonsOverlay: NSObject {
     func start() {
         timer?.invalidate()
         loggedOnce = false
+        verdicts = [:]          // windows may have changed since last time
+        logged = []
         shown = false
         previousFrames = []
         buildPanels()
@@ -215,9 +222,56 @@ final class WindowButtonsOverlay: NSObject {
 
     // MARK: - Internals
 
+    private static func key(_ t: Thumbnail) -> String { (t.appBundleID ?? "") + "\u{1}" + t.title }
+
+    /// Reads Mission Control's thumbnails and keeps only real windows: big enough, not
+    /// tucked inside another thumbnail, and matching exactly one window MC Close can act on.
     private func refreshThumbnails() {
-        thumbnails = WindowCloser.missionControlThumbnails()
+        let all = WindowCloser.missionControlThumbnails()
         thumbnailsRead = Date()
+        let sanity = ThumbnailSanity.check(all.map(\.frame))
+        var keep: [Thumbnail] = []
+        var unknown: [Thumbnail] = []
+        for (t, verdict) in zip(all, sanity) {
+            let k = Self.key(t)
+            if verdict != .keep {
+                logOnce(k + "\(verdict)", "overlay: no buttons for \(Log.title(t.title)) "
+                    + "(\(verdict == .tooSmall ? "too small to be a window" : "inside another thumbnail"), "
+                    + "\(Int(t.frame.width))x\(Int(t.frame.height)) at \(Int(t.frame.minX)),\(Int(t.frame.minY)))")
+                continue
+            }
+            switch verdicts[k] {
+            case true?: keep.append(t)
+            case false?: break
+            case nil: unknown.append(t)
+            }
+        }
+        thumbnails = keep
+        guard !unknown.isEmpty, !checking else { return }
+        checking = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let snap = WindowCloser.snapshot()
+            let results = unknown.map { (Self.key($0), $0, WindowCloser.match($0, in: snap).window != nil) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.checking = false
+                guard self.timer != nil else { return }   // Mission Control closed meanwhile
+                for (k, t, ok) in results {
+                    self.verdicts[k] = ok
+                    if !ok {
+                        self.logOnce(k + "nomatch", "overlay: no buttons for \(Log.title(t.title))"
+                            + (t.appBundleID.map { " (\($0))" } ?? "") + ": no single visible window of a normal app has that title")
+                    }
+                }
+                self.thumbnailsRead = .distantPast   // redraw with the answers
+            }
+        }
+    }
+
+    private func logOnce(_ key: String, _ line: String) {
+        guard !logged.contains(key) else { return }
+        logged.insert(key)
+        Log.write(line)
     }
 
     private func update() {
@@ -229,7 +283,7 @@ final class WindowButtonsOverlay: NSObject {
             previousFrames = frames
             if !loggedOnce && !frames.isEmpty {
                 loggedOnce = true
-                Log.write("overlay: \(frames.count) window thumbnails")
+                Log.write("overlay: buttons on \(frames.count) window thumbnails")
             }
             if settled && !shown && showButtons { showPanels() }
             if frames.isEmpty && shown { hidePanels(animated: true) }

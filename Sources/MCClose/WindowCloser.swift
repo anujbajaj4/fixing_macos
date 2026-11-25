@@ -149,31 +149,51 @@ enum WindowCloser {
     /// them all as `ambiguous` (an app-level action can still act if they share one app).
     static func realWindows(for thumb: Thumbnail, trace: ((String) -> Void)? = nil)
         -> (window: AXUIElement?, ambiguous: [AXUIElement]) {
+        match(thumb, in: snapshot(), trace: trace)
+    }
+
+    /// Every window of every normal, visible app, read once, so many thumbnails can be
+    /// checked against it. Safe to call off the main thread.
+    struct WindowSnapshot {
         var windows: [AXUIElement] = []
         var candidates: [WindowCandidate] = []
+        var bundleIDs: [String?] = []
+    }
 
-        // macOS 27 thumbnails name their app: look only at that app's windows (fall back to
-        // all apps if that finds none).
-        let allApps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
-        let ownApp = allApps.filter { thumb.appBundleID != nil && $0.bundleIdentifier == thumb.appBundleID }
-        if !ownApp.isEmpty { trace?("thumbnail belongs to \(thumb.appBundleID ?? "?")") }
-        for app in (ownApp.isEmpty ? allApps : ownApp) {
+    static func snapshot() -> WindowSnapshot {
+        var snap = WindowSnapshot()
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && !app.isHidden {
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(appElement, 0.3) // don't hang on a frozen app
             let appName = app.localizedName ?? ""
             for window in AX.elements(appElement, kAXWindowsAttribute) {
-                windows.append(window)
-                candidates.append(WindowCandidate(
+                // Invisible helper windows are often tiny; they're never what a thumbnail shows.
+                if let f = AX.frame(window), f.width < 40 || f.height < 30 { continue }
+                snap.windows.append(window)
+                snap.bundleIDs.append(app.bundleIdentifier)
+                snap.candidates.append(WindowCandidate(
                     title: AX.string(window, kAXTitleAttribute) ?? "",
                     appName: appName,
                     minimized: AX.bool(window, kAXMinimizedAttribute) ?? false))
             }
         }
-        let outcome = WindowMatcher.pick(thumbnailTitle: thumb.title, from: candidates)
-        trace?("thumbnail \(Log.title(thumb.title)) vs \(candidates.count) windows: \(outcome)")
+        return snap
+    }
+
+    /// The one real window behind `thumb`, or the equally good ones if it's ambiguous.
+    /// macOS 27 thumbnails name their app, so only that app's windows are considered.
+    static func match(_ thumb: Thumbnail, in snap: WindowSnapshot, trace: ((String) -> Void)? = nil)
+        -> (window: AXUIElement?, ambiguous: [AXUIElement]) {
+        var indices = Array(snap.windows.indices)
+        if let bundle = thumb.appBundleID {
+            let own = indices.filter { snap.bundleIDs[$0] == bundle }
+            if !own.isEmpty { indices = own; trace?("thumbnail belongs to \(bundle)") }
+        }
+        let outcome = WindowMatcher.pick(thumbnailTitle: thumb.title, from: indices.map { snap.candidates[$0] })
+        trace?("thumbnail \(Log.title(thumb.title)) vs \(indices.count) windows: \(outcome)")
         switch outcome {
-        case .match(let i): return (windows[i], [])
-        case .ambiguous(let list): return (nil, list.map { windows[$0] })
+        case .match(let i): return (snap.windows[indices[i]], [])
+        case .ambiguous(let list): return (nil, list.map { snap.windows[indices[$0]] })
         case .none: return (nil, [])
         }
     }

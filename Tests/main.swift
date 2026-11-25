@@ -98,6 +98,16 @@ check(!Geometry.isFilling(CGRect(x: 100, y: 100, width: 800, height: 600), visib
 check(Geometry.axRect(fromAppKit: CGRect(x: 0, y: 0, width: 1440, height: 875), mainScreenHeight: 900)
         == CGRect(x: 0, y: 25, width: 1440, height: 875), "AppKit visible frame to AX (menu bar at top)")
 
+// MARK: ThumbnailSanity (no buttons where there's no window)
+let big = CGRect(x: 0, y: 0, width: 600, height: 400)
+let other = CGRect(x: 650, y: 0, width: 300, height: 200)
+let tucked = CGRect(x: 100, y: 80, width: 120, height: 90)      // inside `big`, like the rows inside Activity Monitor
+let speck = CGRect(x: 50, y: 500, width: 20, height: 12)         // a zero-ish helper window
+let edge = CGRect(x: 550, y: 350, width: 120, height: 100)       // overlaps a corner only
+check(ThumbnailSanity.check([big, other, tucked, speck, edge]) == [.keep, .keep, .insideAnother, .tooSmall, .keep],
+      "drops tiny placeholders and ones tucked inside a bigger thumbnail, keeps neighbours")
+check(ThumbnailSanity.check([big, big]) == [.keep, .keep], "two equal thumbnails don't cancel each other")
+
 // MARK: ButtonLayout (fixed buttons on every thumbnail)
 let thumbA = CGRect(x: 100, y: 200, width: 400, height: 300)
 let thumbB = CGRect(x: 600, y: 200, width: 400, height: 300)

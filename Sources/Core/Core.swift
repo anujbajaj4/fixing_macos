@@ -171,6 +171,28 @@ enum Geometry {
     }
 }
 
+/// macOS 27's Mission Control also lists things that aren't drawn as windows (invisible
+/// helper windows, placeholders behind real windows). Before drawing buttons, drop the
+/// ones that are too small to be a thumbnail, or that sit inside a bigger thumbnail.
+enum ThumbnailSanity {
+    static let minWidth: CGFloat = 60, minHeight: CGFloat = 40
+
+    enum Verdict: Equatable { case keep, tooSmall, insideAnother }
+
+    static func check(_ frames: [CGRect]) -> [Verdict] {
+        frames.enumerated().map { i, f in
+            if f.width < minWidth || f.height < minHeight { return .tooSmall }
+            let area = f.width * f.height
+            let inside = frames.enumerated().contains { j, g in
+                guard j != i, g.width * g.height > area else { return false }
+                let overlap = f.intersection(g)
+                return !overlap.isNull && overlap.width * overlap.height >= area * 0.8
+            }
+            return inside ? .insideAnother : .keep
+        }
+    }
+}
+
 /// Where the buttons sit on each thumbnail: like a window's own controls, inside the
 /// top-left corner of its title bar, on a small pill that hides the thumbnail's own
 /// miniature controls. Narrow thumbnails get proportionally smaller buttons.
