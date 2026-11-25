@@ -102,14 +102,21 @@ check(Geometry.axRect(fromAppKit: CGRect(x: 0, y: 0, width: 1440, height: 875), 
 let thumbA = CGRect(x: 100, y: 200, width: 400, height: 300)
 let thumbB = CGRect(x: 600, y: 200, width: 400, height: 300)
 let r4 = ButtonLayout.rects(forThumbnail: thumbA, count: 4)
-check(r4.count == 4 && r4[0] == CGRect(x: 109, y: 209, width: 13, height: 13), "first button inside the top-left corner")
-check(r4[1].minX - r4[0].minX == 20 && r4[3].minX == 169, "buttons 20 pt apart, like window controls")
+check(r4.count == 4 && r4[0] == CGRect(x: 108, y: 208, width: 13, height: 13), "first button inside the top-left corner")
+check(r4[1].minX - r4[0].minX == 20 && r4[3].minX == 168, "buttons 20 pt apart, like window controls")
+check(ButtonLayout.pillRect(forThumbnail: thumbA, count: 4) == CGRect(x: 104, y: 204, width: 81, height: 21),
+      "pill hugs the buttons and covers the thumbnail's own corner")
 check(ButtonLayout.hit(CGPoint(x: 115, y: 215), thumbnails: [thumbA, thumbB], count: 4).map { $0.thumbnail == 0 && $0.button == 0 } == true, "hit close on first thumbnail")
-check(ButtonLayout.hit(CGPoint(x: 675, y: 215), thumbnails: [thumbA, thumbB], count: 4).map { $0.thumbnail == 1 && $0.button == 3 } == true, "hit zoom on second thumbnail")
-check(ButtonLayout.hit(CGPoint(x: 107, y: 207), thumbnails: [thumbA], count: 4).map { $0.thumbnail == 0 && $0.button == 0 } == true, "a little slop around a button still hits")
+check(ButtonLayout.hit(CGPoint(x: 674, y: 215), thumbnails: [thumbA, thumbB], count: 4).map { $0.thumbnail == 1 && $0.button == 3 } == true, "hit zoom on second thumbnail")
+check(ButtonLayout.hit(CGPoint(x: 106, y: 206), thumbnails: [thumbA], count: 4).map { $0.thumbnail == 0 && $0.button == 0 } == true, "a little slop around a button still hits")
 check(ButtonLayout.hit(CGPoint(x: 300, y: 350), thumbnails: [thumbA], count: 4) == nil, "middle of a thumbnail is not a button")
-check(ButtonLayout.hit(CGPoint(x: 125.5, y: 215), thumbnails: [thumbA], count: 4) == nil, "the sliver between two buttons is not a button")
-check(ButtonLayout.groupRect(forThumbnail: thumbA, count: 4).contains(CGPoint(x: 126, y: 215)), "between buttons still counts as hovering the group")
+check(ButtonLayout.hit(CGPoint(x: 124.5, y: 215), thumbnails: [thumbA], count: 4) == nil, "the sliver between two buttons is not a button")
+check(ButtonLayout.groupRect(forThumbnail: thumbA, count: 4).contains(CGPoint(x: 124.5, y: 215)), "between buttons still counts as hovering the group")
+let narrow = CGRect(x: 0, y: 0, width: 77, height: 160)   // e.g. Calculator
+let nr = ButtonLayout.rects(forThumbnail: narrow, count: 4)
+check(ButtonLayout.scale(forThumbnail: narrow, count: 4) < 1 && ButtonLayout.pillRect(forThumbnail: narrow, count: 4).maxX <= narrow.maxX,
+      "narrow thumbnails get smaller buttons that stay inside (last ends at \(nr[3].maxX))")
+check(ButtonLayout.scale(forThumbnail: thumbA, count: 4) == 1, "normal thumbnails get full-size buttons")
 
 // MARK: Version
 check(Version.isNewer("1.2.10", than: "1.2.9"), "numeric, not string, compare")

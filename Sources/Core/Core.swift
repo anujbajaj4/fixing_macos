@@ -172,25 +172,41 @@ enum Geometry {
 }
 
 /// Where the buttons sit on each thumbnail: like a window's own controls, inside the
-/// top-left corner of its title bar. All in AX coordinates (top-left origin).
+/// top-left corner of its title bar, on a small pill that hides the thumbnail's own
+/// miniature controls. Narrow thumbnails get proportionally smaller buttons.
+/// All in AX coordinates (top-left origin).
 enum ButtonLayout {
     static let diameter: CGFloat = 13     // macOS window controls are 12–14 pt
     static let gap: CGFloat = 7           // space between circles
-    static let inset: CGFloat = 9         // from the thumbnail's left and top edges
+    static let inset: CGFloat = 8         // from the thumbnail's left and top edges
+    static let padding: CGFloat = 4       // pill around the circles
     static let slop: CGFloat = 3          // extra hit area around each circle
 
+    /// 1 normally; less on thumbnails too narrow for a full-size row.
+    static func scale(forThumbnail f: CGRect, count: Int) -> CGFloat {
+        let needed = inset * 2 + CGFloat(count) * diameter + CGFloat(max(count - 1, 0)) * gap
+        return min(1, max(0.5, f.width / needed))
+    }
+
     static func rects(forThumbnail f: CGRect, count: Int) -> [CGRect] {
-        (0..<count).map { i in
-            CGRect(x: f.minX + inset + CGFloat(i) * (diameter + gap), y: f.minY + inset,
-                   width: diameter, height: diameter)
+        let k = scale(forThumbnail: f, count: count)
+        return (0..<count).map { i in
+            CGRect(x: f.minX + inset * k + CGFloat(i) * (diameter + gap) * k, y: f.minY + inset * k,
+                   width: diameter * k, height: diameter * k)
         }
+    }
+
+    /// The pill behind the buttons.
+    static func pillRect(forThumbnail f: CGRect, count: Int) -> CGRect {
+        let r = rects(forThumbnail: f, count: count)
+        guard let first = r.first, let last = r.last else { return .zero }
+        let pad = padding * scale(forThumbnail: f, count: count)
+        return first.union(last).insetBy(dx: -pad, dy: -pad)
     }
 
     /// The whole row, with slop: hovering it shows the symbols, like on a real window.
     static func groupRect(forThumbnail f: CGRect, count: Int) -> CGRect {
-        let r = rects(forThumbnail: f, count: count)
-        guard let first = r.first, let last = r.last else { return .zero }
-        return first.union(last).insetBy(dx: -slop - 2, dy: -slop - 2)
+        pillRect(forThumbnail: f, count: count).insetBy(dx: -slop, dy: -slop)
     }
 
     /// Which button of which thumbnail is at `p`, if any.

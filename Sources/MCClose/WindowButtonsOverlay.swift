@@ -101,10 +101,51 @@ private final class ButtonsView: NSView {
     }
 }
 
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+/// One screen's layer: frosted pills (the macOS HUD material) under the buttons.
+private final class ScreenLayer {
+    let panel: NSPanel
+    let container = FlippedView()
+    let view: ButtonsView
+    let screen: NSScreen
+    var pills: [NSVisualEffectView] = []
+
+    init(panel: NSPanel, view: ButtonsView, screen: NSScreen) {
+        self.panel = panel
+        self.view = view
+        self.screen = screen
+    }
+
+    /// One pill per thumbnail, behind its buttons; hides the thumbnail's own tiny controls.
+    func layoutPills(_ thumbnails: [CGRect]) {
+        while pills.count < thumbnails.count {
+            let pill = NSVisualEffectView()
+            pill.material = .hudWindow
+            pill.blendingMode = .behindWindow
+            pill.state = .active
+            pill.wantsLayer = true
+            pill.layer?.masksToBounds = true
+            pill.layer?.borderWidth = 0.5
+            pill.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+            container.addSubview(pill, positioned: .below, relativeTo: view)
+            pills.append(pill)
+        }
+        while pills.count > thumbnails.count { pills.removeLast().removeFromSuperview() }
+        for (pill, f) in zip(pills, thumbnails) {
+            let r = ButtonLayout.pillRect(forThumbnail: f, count: WindowAction.buttons.count)
+            pill.frame = r
+            pill.layer?.cornerRadius = r.height / 2
+        }
+    }
+}
+
 /// Shows window buttons on every thumbnail while Mission Control is open, and keeps
 /// track of the thumbnails (the keyboard shortcuts use them too).
 final class WindowButtonsOverlay: NSObject {
-    private var panels: [(panel: NSPanel, view: ButtonsView, screen: NSScreen)] = []
+    private var panels: [ScreenLayer] = []
     private var timer: Timer?
     private var thumbnails: [Thumbnail] = []
     private var previousFrames: [CGRect] = []
@@ -194,7 +235,11 @@ final class WindowButtonsOverlay: NSObject {
             if frames.isEmpty && shown { hidePanels(animated: true) }
             for p in panels {
                 let local = frames.map { convert($0, to: p.screen) }
-                if p.view.thumbnails != local { p.view.thumbnails = local; p.view.needsDisplay = true }
+                if p.view.thumbnails != local {
+                    p.view.thumbnails = local
+                    p.layoutPills(local)
+                    p.view.needsDisplay = true
+                }
             }
         }
 
@@ -232,10 +277,14 @@ final class WindowButtonsOverlay: NSObject {
             panel.ignoresMouseEvents = true      // clicks go to Mission Control; ours are caught by the tap
             panel.hidesOnDeactivate = false
             panel.alphaValue = 0
-            let view = ButtonsView(frame: NSRect(origin: .zero, size: screen.frame.size))
-            panel.contentView = view
+            let size = NSRect(origin: .zero, size: screen.frame.size)
+            let view = ButtonsView(frame: size)
+            let layer = ScreenLayer(panel: panel, view: view, screen: screen)
+            layer.container.frame = size
+            layer.container.addSubview(view)
+            panel.contentView = layer.container
             panel.setFrame(screen.frame, display: false)
-            return (panel, view, screen)
+            return layer
         }
     }
 

@@ -1,7 +1,7 @@
 Control any window right from Mission Control: point at it, then use the buttons on its corner or a shortcut.
 
 ## What's new in 1.3.0
-- **Buttons on every window, where they belong.** When Mission Control opens, each window gets its own controls in the top-left corner of its title bar, in Apple's red, yellow and green (plus a graphite + for zoom), instead of one set following the pointer. Like on a real window, the symbols appear when you point at the buttons, and holding Option turns green into +.
+- **Buttons on every window, where they belong.** When Mission Control opens, each window gets its own controls in the top-left corner of its title bar, in Apple's red, yellow and green (plus a graphite + for zoom), on a small frosted pill, instead of one set following the pointer. Like on a real window, the symbols appear when you point at the buttons, and holding Option turns green into +. Narrow windows get smaller buttons that fit.
 - The buttons fade in once Mission Control has settled and follow the layout as windows close or move. Clicking anywhere else on a window still picks it, as usual.
 
 ## In 1.2.0
