@@ -40,11 +40,11 @@ private final class ButtonsView: NSView {
     var optionHeld = false
     var theme: ButtonTheme = .multicolor
     var dark = false
+    var actions: [WindowAction] = WindowAction.buttons   // chosen in Settings ▸ Buttons
 
     override var isFlipped: Bool { true }   // same orientation as the AX coordinates
 
     override func draw(_ dirtyRect: NSRect) {
-        let actions = WindowAction.buttons
         for (t, row) in rows.enumerated() {
             let showSymbols = hoveredGroup == t
             for (b, rect) in row.enumerated() where b < actions.count {
@@ -98,8 +98,27 @@ private final class ButtonsView: NSView {
             path.move(to: CGPoint(x: c.x - r * 1.2, y: c.y)); path.line(to: CGPoint(x: c.x + r * 1.2, y: c.y))
             path.move(to: CGPoint(x: c.x, y: c.y - r * 1.2)); path.line(to: CGPoint(x: c.x, y: c.y + r * 1.2))
             path.stroke()
-        case .hideApp, .quitApp:
-            break
+        case .hideApp:
+            // An eye with a line through it.
+            let eye = NSBezierPath()
+            eye.lineWidth = path.lineWidth * 0.85
+            eye.move(to: CGPoint(x: c.x - r * 1.3, y: c.y))
+            eye.curve(to: CGPoint(x: c.x + r * 1.3, y: c.y), controlPoint1: CGPoint(x: c.x - r * 0.5, y: c.y - r * 1.1),
+                      controlPoint2: CGPoint(x: c.x + r * 0.5, y: c.y - r * 1.1))
+            eye.curve(to: CGPoint(x: c.x - r * 1.3, y: c.y), controlPoint1: CGPoint(x: c.x + r * 0.5, y: c.y + r * 1.1),
+                      controlPoint2: CGPoint(x: c.x - r * 0.5, y: c.y + r * 1.1))
+            eye.stroke()
+            path.move(to: CGPoint(x: c.x - r * 1.1, y: c.y + r * 1.1)); path.line(to: CGPoint(x: c.x + r * 1.1, y: c.y - r * 1.1))
+            path.stroke()
+        case .quitApp:
+            // A power symbol.
+            let arc = NSBezierPath()
+            arc.lineWidth = path.lineWidth
+            arc.lineCapStyle = .round
+            arc.appendArc(withCenter: c, radius: r * 1.1, startAngle: -60, endAngle: 240, clockwise: false)
+            arc.stroke()
+            path.move(to: CGPoint(x: c.x, y: c.y - r * 1.35)); path.line(to: CGPoint(x: c.x, y: c.y - r * 0.1))
+            path.stroke()
         }
     }
 }
@@ -144,6 +163,15 @@ final class WindowButtonsOverlay: NSObject {
     private var logged: Set<String> = []
     /// The button pressed in the event tap, waiting for `perform` on the main thread.
     private var armed: (action: WindowAction, thumbnail: Thumbnail)?
+    /// The buttons on each window, left to right (Settings ▸ Buttons).
+    private var buttons: [WindowAction] = AppState.buttonConfig.visible
+
+    /// Settings changed which buttons show, or their order.
+    func reloadButtons() {
+        buttons = AppState.buttonConfig.visible
+        for p in panels { p.view.actions = buttons; p.view.needsDisplay = true }
+        lastRead = .distantPast
+    }
 
     /// No riding in and out: turned off in Settings, or macOS's Reduce motion is on.
     private var reduceMotion: Bool {
@@ -179,6 +207,7 @@ final class WindowButtonsOverlay: NSObject {
         shown = false
         buildPanels()
         applyTheme()
+        reloadButtons()
         let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.update() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
@@ -213,8 +242,8 @@ final class WindowButtonsOverlay: NSObject {
     /// tap on mouse-down; remembers which window it belongs to for `perform`.
     func button(at point: CGPoint, optionHeld: Bool) -> WindowAction? {
         guard timer != nil, leaving == nil, shown, showButtons, let hit = ButtonLayout.hit(point, rows: targets),
-              hit.thumbnail < thumbnails.count, hit.button < WindowAction.buttons.count else { return nil }
-        var action = WindowAction.buttons[hit.button]
+              hit.thumbnail < thumbnails.count, hit.button < buttons.count else { return nil }
+        var action = buttons[hit.button]
         if action == .fullScreen && optionHeld { action = .zoom }   // Option-click green, as on a window
         armed = (action, thumbnails[hit.thumbnail])
         for p in panels { p.view.pressed = hit; p.view.needsDisplay = true }
@@ -323,7 +352,7 @@ final class WindowButtonsOverlay: NSObject {
                 keep.append(t)
             }
         }
-        let count = WindowAction.buttons.count
+        let count = buttons.count
         thumbnails = keep
         targets = keep.map { ButtonLayout.rects(forThumbnail: $0.frame, count: count, native: $0.native) }
         homes = keep.map { t in

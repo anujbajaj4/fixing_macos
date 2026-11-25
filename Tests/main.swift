@@ -149,6 +149,22 @@ let mid = Motion.row(from: home, to: there, progress: 0.5)[0]
 check(mid.minX < 1000 && mid.minX > 100 && mid.width < 14 && mid.width > 7, "part-way, the row is between, shrinking")
 check(Motion.row(from: home + home, to: there, progress: 0.5) == there, "mismatched rows jump straight to the end")
 
+// MARK: ButtonConfig (choose and order the buttons)
+check(ButtonConfig.standard.visible == [.close, .minimize, .fullScreen, .zoom], "standard: the window's controls plus zoom")
+check(ButtonConfig(serialized: nil) == .standard && ButtonConfig(serialized: []) == .standard, "nothing stored: standard")
+let stored = ButtonConfig(serialized: ["zoom", "close", "-minimize", "quitApp", "bogus", "close"])
+check(stored.visible == [.zoom, .close, .quitApp], "stored order and choices are kept; junk and repeats skipped")
+check(stored.items.count == WindowAction.allCases.count && stored.items.suffix(2).allSatisfy { !$0.shown },
+      "actions missing from the stored list are added, hidden")
+check(ButtonConfig(serialized: stored.serialized) == stored, "saving and loading round-trips")
+var cfg = ButtonConfig.standard
+cfg.move(from: 3, to: 0)
+check(cfg.visible == [.zoom, .close, .minimize, .fullScreen], "drag zoom to the front")
+cfg.setShown(.minimize, false); cfg.setShown(.hideApp, true)
+check(cfg.visible == [.zoom, .close, .fullScreen, .hideApp], "hide minimize, add Hide App")
+cfg.move(from: 0, to: 99)
+check(cfg.items.last?.action == .zoom, "moving past the end puts it last")
+
 // MARK: ButtonTheme
 check(ButtonTheme.system.resolved(systemAccent: -1) == .graphite, "Match System on a Graphite Mac draws grey buttons")
 check(ButtonTheme.system.resolved(systemAccent: nil) == .multicolor, "Match System on a Multicolor Mac draws red, yellow, green")

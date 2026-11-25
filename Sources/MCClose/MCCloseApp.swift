@@ -81,6 +81,17 @@ final class AppState: ObservableObject {
         UserDefaults.standard.set(on, forKey: "MoveWithWindows")
     }
 
+    /// Which buttons show on each window, in order (Settings ▸ Buttons).
+    static var buttonConfig: ButtonConfig { ButtonConfig(serialized: UserDefaults.standard.stringArray(forKey: "Buttons")) }
+    @Published var buttons = AppState.buttonConfig
+    var onButtonsChange: (() -> Void)?
+
+    func setButtons(_ config: ButtonConfig) {
+        buttons = config
+        UserDefaults.standard.set(config.serialized, forKey: "Buttons")
+        onButtonsChange?()
+    }
+
     /// Shortcuts switched off in Settings.
     @Published var disabledShortcuts = Set(UserDefaults.standard.stringArray(forKey: "DisabledShortcuts") ?? [])
 
@@ -232,6 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.overlay.stop()
         }
         state.onButtonThemeChange = { [weak self] theme in self?.overlay.theme = theme }
+        state.onButtonsChange = { [weak self] in self?.overlay.reloadButtons() }
         state.onShowCloseButtonChange = { [weak self] on in
             guard let self else { return }
             self.overlay.showButtons = on

@@ -102,6 +102,11 @@ func thumbnail(_ name: String) -> CGRect? {
 
 enum Button: Int { case close = 0, minimize, fullScreen, zoom }   // ButtonLayout order
 
+/// How many buttons the app shows (CI turns on all six for the second pass; the first four keep their order).
+let buttonCount = (UserDefaults(suiteName: "io.github.anujbajaj4.MCClose")?.stringArray(forKey: "Buttons") ?? [])
+    .filter { !$0.hasPrefix("-") }.count.nonZero ?? 4
+extension Int { var nonZero: Int? { self == 0 ? nil : self } }
+
 /// The theme the app is set to for this pass (CI sets it for the second pass).
 let expectGraphite = ProcessInfo.processInfo.environment["EXPECT_THEME"] == "graphite"
 
@@ -117,7 +122,7 @@ func nativeControls(ofWindow title: String) -> NativeControls? {
 
 /// A button on a test window's thumbnail (from the app's own ButtonLayout, compiled in).
 func buttonRect(_ b: Button, on thumb: CGRect, window name: String) -> CGRect {
-    ButtonLayout.rects(forThumbnail: thumb, count: 4, native: nativeControls(ofWindow: name + ".txt"))[b.rawValue]
+    ButtonLayout.rects(forThumbnail: thumb, count: buttonCount, native: nativeControls(ofWindow: name + ".txt"))[b.rawValue]
 }
 func buttonCenter(_ b: Button, on thumb: CGRect, window name: String) -> CGPoint {
     center(buttonRect(b, on: thumb, window: name))

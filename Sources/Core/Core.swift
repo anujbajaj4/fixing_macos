@@ -71,6 +71,51 @@ enum WindowAction: String, CaseIterable {
     }
 }
 
+/// Which buttons appear on each window, and in what order (Settings ▸ Buttons).
+/// Stored as a list like ["close", "minimize", "-hideApp", …]: "-" means hidden.
+struct ButtonConfig: Equatable {
+    struct Item: Equatable { var action: WindowAction; var shown: Bool }
+    var items: [Item]
+
+    static let standard = ButtonConfig(items: WindowAction.allCases.map {
+        Item(action: $0, shown: WindowAction.buttons.contains($0))
+    })
+
+    /// The buttons drawn on each window, left to right.
+    var visible: [WindowAction] { items.filter(\.shown).map(\.action) }
+
+    var serialized: [String] { items.map { ($0.shown ? "" : "-") + $0.action.rawValue } }
+
+    /// Reads a stored list; unknown or repeated entries are skipped, and actions missing from
+    /// it (e.g. added in a later version) are appended, hidden.
+    init(serialized list: [String]?) {
+        guard let list, !list.isEmpty else { self = .standard; return }
+        var items: [Item] = []
+        for entry in list {
+            let hidden = entry.hasPrefix("-")
+            guard let a = WindowAction(rawValue: hidden ? String(entry.dropFirst()) : entry),
+                  !items.contains(where: { $0.action == a }) else { continue }
+            items.append(Item(action: a, shown: !hidden))
+        }
+        for a in WindowAction.allCases where !items.contains(where: { $0.action == a }) {
+            items.append(Item(action: a, shown: false))
+        }
+        self.items = items
+    }
+
+    init(items: [Item]) { self.items = items }
+
+    mutating func move(from source: Int, to destination: Int) {
+        guard items.indices.contains(source) else { return }
+        let item = items.remove(at: source)
+        items.insert(item, at: min(max(destination, 0), items.count))
+    }
+
+    mutating func setShown(_ action: WindowAction, _ shown: Bool) {
+        if let i = items.firstIndex(where: { $0.action == action }) { items[i].shown = shown }
+    }
+}
+
 /// Which titled Dock elements in Mission Control are window thumbnails.
 /// Seen on macOS 15: thumbnails are AXButton titled with the window's title, inside an
 /// AXGroup "Mission Control". Other titled things must never be targets: Dock icons

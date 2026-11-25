@@ -3,6 +3,7 @@ Control any window right from Mission Control: point at it, then use the buttons
 ## What's new in 1.4.0
 - **Updates keep your Accessibility permission.** From this version on, every release is signed with the same certificate, so macOS recognises updates as the same app. (Updating to 1.4.0 itself asks once more.)
 - **Buttons ride with the windows.** As Mission Control opens, each window's buttons travel from its real controls to its thumbnail; as it closes, they travel back and fade. Turn this off in Settings ("Move buttons with the windows"); MC Close also follows Reduce motion.
+- **Choose your buttons.** In Settings ▸ Buttons, tick the ones you want and drag them into any order: Close, Minimize, Full Screen, Zoom, and now also Hide App and Quit App.
 - **Settings window** (⌘, from the menu): button colours with a preview, buttons on or off, each shortcut on or off, and Start at Login.
 - **Snappier:** MC Close now reads Mission Control in the background, so your keyboard and mouse never wait for it.
 - **Buttons that look like the window's own.** MC Close now finds where each window's real controls are and draws its buttons exactly over their miniature in Mission Control, at the same size, with zoom (+) as a fourth control after green. No extra background.
