@@ -71,7 +71,16 @@ jobs:
           grep -q "MC Close .* launched on macOS" ~/Library/Logs/MCClose.log
           kill "$pid"
 
-      - name: Upload the build
+      - name: End-to-end - real Mission Control, ⌘W and the ✕ button
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/shots"
+          xcrun swiftc Tests/e2e.swift -o build/e2e
+          open "$RUNNER_TEMP/Applications/MCClose.app"
+          sleep 3
+          build/e2e "$RUNNER_TEMP/shots"
+
+      - name: Upload the build and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -79,4 +88,5 @@ jobs:
           path: |
             build/MCClose.dmg
             ${{ runner.temp }}/screen.png
+            ${{ runner.temp }}/shots/
           if-no-files-found: ignore
