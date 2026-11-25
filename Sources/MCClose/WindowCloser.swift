@@ -180,15 +180,40 @@ enum WindowCloser {
             case .close: ok = press(window, kAXCloseButtonAttribute, trace)
             case .minimize: ok = set(window, kAXMinimizedAttribute, true, trace)
                                  || press(window, kAXMinimizeButtonAttribute, trace)
-            case .fullScreen: ok = set(window, "AXFullScreen", true, trace)
-                                   || press(window, kAXFullScreenButtonAttribute, trace)
-                                   || press(window, kAXZoomButtonAttribute, trace)
+            case .fullScreen: ok = enterFullScreen(window, thumb: thumb, trace)
             case .zoom: ok = zoom(window, trace)
             case .hideApp, .quitApp: ok = false   // handled above
             }
         }
         if !ok { NSSound.beep() }
         return ok
+    }
+
+    // MARK: Full screen
+
+    /// macOS ignores a full-screen request while Mission Control is showing (seen in CI on
+    /// macOS 15), so first pick the window, as clicking its thumbnail would, which leaves
+    /// Mission Control; then take it full screen.
+    private static func enterFullScreen(_ window: AXUIElement, thumb: Thumbnail, _ trace: (String) -> Void) -> Bool {
+        let r = AXUIElementPerformAction(thumb.element, kAXPressAction as CFString)
+        if r == .success {
+            trace("picked the window to leave Mission Control; full screen follows")
+        } else {
+            trace("couldn't pick the thumbnail (AX error \(r.rawValue)); pressing Escape to leave Mission Control")
+            let src = CGEventSource(stateID: .hidSystemState)
+            CGEvent(keyboardEventSource: src, virtualKey: 53, keyDown: true)?.post(tap: .cghidEventTap)
+            CGEvent(keyboardEventSource: src, virtualKey: 53, keyDown: false)?.post(tap: .cghidEventTap)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            var later: [String] = []
+            let note: (String) -> Void = { later.append($0) }
+            let ok = set(window, "AXFullScreen", true, note)
+                || press(window, kAXFullScreenButtonAttribute, note)
+                || press(window, kAXZoomButtonAttribute, note)
+            Log.write("full screen, after leaving Mission Control: " + later.joined(separator: "; "))
+            if !ok { NSSound.beep() }
+        }
+        return true
     }
 
     // MARK: Zoom (what Option-clicking the green button does)
