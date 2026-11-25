@@ -116,7 +116,12 @@ func boolAttr(_ el: AXUIElement?, _ a: String) -> Bool {
 @discardableResult
 func hover(_ name: String) -> CGRect? {
     wait(0.8)   // Mission Control re-lays out after each action
-    guard let f = thumbnail(name) else { return nil }
+    var found = thumbnail(name)
+    for _ in 0..<4 where found == nil { wait(1); found = thumbnail(name) }   // still animating in
+    guard let f = found else {
+        print("no thumbnail for \(name); Dock shows: " + dockElements().filter { $0.role != "AXDockItem" }.map { "\($0.role) \"\($0.title)\"" }.joined(separator: ", "))
+        return nil
+    }
     move(to: center(f)); wait(0.6)
     return f
 }
@@ -276,7 +281,12 @@ ok(noticedExit(since: logBefore), "MC Close noticed Mission Control closing")
 ok(overlayFrames().isEmpty, "buttons are gone after leaving Mission Control")
 
 // ⌘W outside Mission Control must reach the app as usual.
-sh("osascript -e 'tell application \"TextEdit\"' -e 'activate' -e 'set index of window \"e2e-gamma.txt\" to 1' -e 'end tell' </dev/null 2>/dev/null")
+// Bring gamma to the front with Accessibility calls (an AppleScript here hung for 2 minutes in CI).
+NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.TextEdit").first?.activate()
+if let g = teWindow("e2e-gamma.txt") {
+    _ = AXUIElementPerformAction(g, kAXRaiseAction as CFString)
+    _ = AXUIElementSetAttributeValue(g, kAXMainAttribute as CFString, kCFBooleanTrue)
+}
 wait(1.5)
 if teWindow("e2e-gamma.txt") != nil {
     key(13, command: true)

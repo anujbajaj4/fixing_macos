@@ -84,6 +84,7 @@ jobs:
           build/e2e "$RUNNER_TEMP/shots"
 
       - name: End-to-end again, as on a macOS whose Dock sends no Mission Control notifications
+        if: success() || failure()
         run: |
           set -uo pipefail
           pkill -x MCClose || true
