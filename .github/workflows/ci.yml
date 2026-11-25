@@ -48,7 +48,7 @@ jobs:
           [ "$(defaults read "$PWD/$app/Contents/Info" LSUIElement)" = 1 ] || { echo "LSUIElement missing"; exit 1; }
           [ "$(defaults read "$PWD/$app/Contents/Info" CFBundleShortVersionString)" = "$(tr -d '[:space:]' < VERSION)" ]
           codesign --verify --deep --strict --verbose=2 "$app"
-          req=$(codesign -dr - "$app" 2>&1 | sed -n 's/^designated => //p'); echo "designated requirement: $req"
+          req=$(codesign -dr - "$app" 2>&1 | sed -n 's/^#* *designated => //p'); echo "designated requirement: $req"
           if [ -n "${MCCLOSE_SIGN_IDENTITY:-}" ]; then
             case "$req" in *cdhash*|"") echo "expected the release certificate, got an ad-hoc signature"; exit 1 ;; esac
           fi

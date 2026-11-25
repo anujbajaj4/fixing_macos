@@ -75,7 +75,7 @@ if [ -n "${MCCLOSE_KEYCHAIN:-}" ]; then sign_args+=(--keychain "${MCCLOSE_KEYCHA
 if [ "$identity" = "-" ]; then echo "==> Signing (ad hoc)"; else echo "==> Signing with \"${identity}\""; fi
 codesign "${sign_args[@]}" "$app"
 codesign --verify --deep --strict "$app"
-echo "designated requirement: $(codesign -dr - "$app" 2>&1 | sed -n 's/^designated => //p')"
+echo "designated requirement: $(codesign -dr - "$app" 2>&1 | sed -n 's/^#* *designated => //p')"
 echo "architectures: $(lipo -archs "$app/Contents/MacOS/$app_name")"
 
 echo "==> Disk image"

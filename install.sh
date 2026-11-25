@@ -22,7 +22,7 @@ cleanup() {
 
 # What macOS ties the Accessibility permission to: the app's designated requirement.
 designated_requirement() {
-    codesign -dr - "$1" 2>&1 | sed -n 's/^designated => //p'
+    codesign -dr - "$1" 2>&1 | sed -n 's/^#* *designated => //p'
 }
 
 quit_running_app() {

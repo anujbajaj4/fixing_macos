@@ -34,7 +34,7 @@ fake pkill     'true'
 fake osascript 'true'
 fake tccutil   'true'
 # codesign -dr - <app>: the fake reads the app's "designated requirement" from Contents/req.
-fake codesign  'for a in "$@"; do last=$a; done; [ -f "$last/Contents/req" ] && sed "s/^/designated => /" "$last/Contents/req"; true'
+fake codesign  'for a in "$@"; do last=$a; done; [ -f "$last/Contents/req" ] && sed -e "s/^# /# designated => /" -e "t" -e "s/^/designated => /" "$last/Contents/req"; true'
 
 run() {   # run the installer the way users do: piped into bash
     PATH="$bin:$PATH" MCCLOSE_DMG_URL="${DMG:-file://$work/MCClose.dmg}" \
@@ -57,7 +57,8 @@ grep -q "^tccutil reset Accessibility io.github.anujbajaj4.MCClose" "$log" && ok
 # Same certificate before and after: the permission carries over.
 mkdir -p "$work/signed/MCClose.app/Contents/MacOS"
 cp "$work/src/MCClose.app/Contents/MacOS/MCClose" "$work/signed/MCClose.app/Contents/MacOS/"
-echo 'identifier "io.github.anujbajaj4.MCClose" and certificate root = H"abc123"' > "$work/signed/MCClose.app/Contents/req"
+# codesign prints an implicit requirement with a leading "# "; the installer must read it either way.
+echo '# identifier "io.github.anujbajaj4.MCClose" and certificate root = H"abc123"' > "$work/signed/MCClose.app/Contents/req"
 tar -C "$work/signed" -cf "$work/Signed.dmg" MCClose.app
 cp "$work/signed/MCClose.app/Contents/req" "$work/Applications/MCClose.app/Contents/req"
 : > "$log"
