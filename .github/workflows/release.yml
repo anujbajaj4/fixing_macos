@@ -55,3 +55,4 @@ jobs:
       contents: read
       pages: write
       id-token: write
+      actions: read

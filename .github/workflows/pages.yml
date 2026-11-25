@@ -15,6 +15,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read     # deploy-pages reads the uploaded artifact (needed when called from Release)
 
 concurrency:
   group: pages
