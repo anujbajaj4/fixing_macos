@@ -140,6 +140,18 @@ func visibleScreenAX() -> CGRect {
     return CGRect(x: v.minX, y: h - v.maxY, width: v.width, height: v.height)
 }
 
+/// Every on-screen window outside layer 0 (owner, layer, frame), to learn what Mission Control
+/// looks like in the window list on this macOS.
+func windowSurvey(_ label: String) {
+    let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+    print("window survey (\(label)):")
+    for d in info {
+        let layer = d[kCGWindowLayer as String] as? Int ?? 0
+        guard layer != 0, let b = d[kCGWindowBounds as String] as? NSDictionary, let f = CGRect(dictionaryRepresentation: b) else { continue }
+        print("  \(d[kCGWindowOwnerName as String] as? String ?? "?") layer \(layer) \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))")
+    }
+}
+
 // MARK: - Setup
 
 let logAtStart = logText().count
@@ -175,9 +187,11 @@ shot("1-windows")
 ok(!logText().dropFirst(logAtStart).contains("Dock layout shows Mission Control (no notification"),
    "backup check stays quiet while Mission Control is closed")
 let logBefore = logText().count
+windowSurvey("Mission Control closed")
 sh("open -a 'Mission Control'")
 wait(2.5)
 shot("2-mission-control")
+windowSurvey("Mission Control open")
 let opened = String(logText().dropFirst(logBefore))
 ok(opened.contains("Dock says AXExposeShowAllWindows") || opened.contains("Dock layout shows Mission Control (no notification"),
    "MC Close noticed Mission Control opening")

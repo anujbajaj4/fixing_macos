@@ -1,13 +1,13 @@
 Control any window right from Mission Control: point at it, then use the buttons on its corner or a shortcut.
 
-## What's new in 1.1.0
+## What's new in 1.1.1
+- **Better diagnosis for new macOS versions.** On macOS 27 Mission Control isn't drawn by the Dock any more, so MC Close can't see it yet. **Diagnose Mission Control…** now records which part of macOS draws it, so the next version can support it.
+- Updating no longer fills the log with "event tap was disabled" lines from the old copy.
+
+## In 1.1.0
 - **Four buttons on the window you point at:** close, minimize, full screen, and zoom (+). Zoom does what Option-clicking the green button does: the window fills the screen in place, without a separate full-screen space. Zoom again to put it back.
 - **Shortcuts in Mission Control:** ⌘W close · ⌘M minimize · ⌃⌘F full screen · ⌥⌘F zoom · ⌘H hide the app · ⌘Q quit the app. They only act when the pointer is on a window, so everywhere else your keys work as usual.
-- **Works when macOS doesn't announce Mission Control:** on some macOS versions (seen on macOS 27) the Dock no longer says when Mission Control opens, so 1.0.0 never showed its button. MC Close now also recognises Mission Control from the Dock's layout.
-- **Diagnose Mission Control…** in the menu records what your Mac shows in Mission Control, so any remaining problem can be fixed from evidence.
-- **Downloads that don't hang:** if your network can't reach GitHub's download server, the installer switches to a mirror after 10 seconds.
-- **Safer:** pointing at a Dock icon in Mission Control no longer counts as pointing at a window.
-- Every button and shortcut is tested on a real Mac in Mission Control before each release.
+- Recognises Mission Control from the Dock's layout when the Dock doesn't announce it, and a mirror for downloads.
 
 ## Install or update
 Paste this into Terminal (no password needed):

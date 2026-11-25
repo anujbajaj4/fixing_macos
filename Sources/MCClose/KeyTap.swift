@@ -21,6 +21,8 @@ final class KeyTap {
 
     fileprivate var tap: CFMachPort?
     fileprivate var swallowMouseUp = false
+    fileprivate var loggedLostPermission = false
+    fileprivate var disabledCount = 0
     private var source: CFRunLoopSource?
 
     @discardableResult
@@ -38,9 +40,20 @@ final class KeyTap {
 
             switch type {
             case .tapDisabledByTimeout, .tapDisabledByUserInput:
-                // macOS disables slow taps; turn ours back on.
+                // macOS disables slow taps; turn ours back on, unless this copy of the app has
+                // lost its Accessibility permission (e.g. while an update replaces it).
+                guard AXIsProcessTrusted() else {
+                    if !me.loggedLostPermission {
+                        me.loggedLostPermission = true
+                        Log.write("event tap disabled: this copy no longer has Accessibility permission")
+                    }
+                    return Unmanaged.passUnretained(event)
+                }
                 if let tap = me.tap { CGEvent.tapEnable(tap: tap, enable: true) }
-                Log.write("event tap was disabled by macOS (\(type.rawValue)); re-enabled")
+                me.disabledCount += 1
+                if me.disabledCount <= 3 || me.disabledCount % 50 == 0 {
+                    Log.write("event tap was disabled by macOS (\(type == .tapDisabledByTimeout ? "timeout" : "user input")); re-enabled (\(me.disabledCount) so far)")
+                }
 
             case .keyDown:
                 if me.isActive(),
