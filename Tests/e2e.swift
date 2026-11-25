@@ -67,8 +67,11 @@ func textEditWindowTitles() -> [String] {
 
 /// MC Close's on-screen windows (the ✕ panel), in top-left global coordinates.
 func overlayFrames() -> [CGRect] {
+    // Match by process, not name: the window server lists it under the display name "MC Close".
+    let pids = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.anujbajaj4.MCClose")
+        .map { Int($0.processIdentifier) })
     let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-    return info.filter { ($0[kCGWindowOwnerName as String] as? String) == "MCClose" }
+    return info.filter { pids.contains(($0[kCGWindowOwnerPID as String] as? Int) ?? -1) }
         .compactMap { d in (d[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } }
 }
 
@@ -164,7 +167,7 @@ if let beta = thumbnail("e2e-beta") {
         move(to: CGPoint(x: b.midX + 6, y: b.midY + 6)); wait(0.2)
         click(center(b))
         wait(1.5)
-        shot("5-after-x-click")
+        shot("5-after-x-click", inline: true)
         ok(!textEditWindowTitles().contains("e2e-beta.txt"), "clicking ✕ closed the hovered window")
     } else {
         ok(false, "✕ button appears when hovering beta")
