@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site
-          cp site/* _site/
+          cp -R site/. _site/
           cp install.sh _site/install.sh
           gh release download --repo "$GITHUB_REPOSITORY" --pattern MCClose.dmg --dir _site
           ls -la _site
