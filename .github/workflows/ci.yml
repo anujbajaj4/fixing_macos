@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Installer tests and shellcheck (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck install.sh scripts/build.sh Tests/install_test.sh
+      - run: bash Tests/install_test.sh
+
+  macos:
+    name: Build, test and smoke-run on macOS
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: xcrun swiftc --version && sw_vers
+
+      - name: Build (runs the logic tests first)
+        run: scripts/build.sh --test
+
+      - name: Check the built app
+        run: |
+          set -euo pipefail
+          app=build/MCClose.app
+          archs=$(lipo -archs "$app/Contents/MacOS/MCClose"); echo "archs: $archs"
+          [[ "$archs" == *x86_64* && "$archs" == *arm64* ]] || { echo "not universal"; exit 1; }
+          min=$(defaults read "$PWD/$app/Contents/Info" LSMinimumSystemVersion); echo "min macOS: $min"
+          [ "$min" = "13.0" ] || { echo "LSMinimumSystemVersion should be 13.0"; exit 1; }
+          [ "$(defaults read "$PWD/$app/Contents/Info" LSUIElement)" = 1 ] || { echo "LSUIElement missing"; exit 1; }
+          [ "$(defaults read "$PWD/$app/Contents/Info" CFBundleShortVersionString)" = "$(tr -d '[:space:]' < VERSION)" ]
+          codesign --verify --deep --strict --verbose=2 "$app"
+          for arch in arm64 x86_64; do
+            vtool -arch "$arch" -show-build "$app/Contents/MacOS/MCClose" | grep -E 'minos|version' | head -2
+          done
+
+      - name: Installer, from the fresh .dmg (as users run it, on macOS's bash 3.2)
+        run: |
+          set -euo pipefail
+          apps="$RUNNER_TEMP/Applications"
+          MCCLOSE_DMG_URL="file://$PWD/build/MCClose.dmg" MCCLOSE_APPS_DIR="$apps" MCCLOSE_NO_OPEN=1 /bin/bash < install.sh
+          codesign --verify --deep --strict "$apps/MCClose.app"
+          if xattr -p com.apple.quarantine "$apps/MCClose.app" 2>/dev/null; then echo "quarantine flag left on"; exit 1; fi
+          # second run = upgrade path
+          MCCLOSE_DMG_URL="file://$PWD/build/MCClose.dmg" MCCLOSE_APPS_DIR="$apps" MCCLOSE_NO_OPEN=1 /bin/bash < install.sh
+
+      - name: Smoke test - launch the app and make sure it stays up
+        run: |
+          set -uo pipefail
+          app="$RUNNER_TEMP/Applications/MCClose.app"
+          rm -f ~/Library/Logs/MCClose.log
+          "$app/Contents/MacOS/MCClose" > "$RUNNER_TEMP/stdout.txt" 2>&1 &
+          pid=$!
+          sleep 10
+          screencapture -x "$RUNNER_TEMP/screen.png" 2>/dev/null || echo "(no screenshot on this runner)"
+          if kill -0 "$pid" 2>/dev/null; then echo "app is still running after 10s"; else
+            echo "app exited early"; cat "$RUNNER_TEMP/stdout.txt"; exit 1; fi
+          echo "--- MCClose.log ---"; cat ~/Library/Logs/MCClose.log
+          grep -q "MC Close .* launched on macOS" ~/Library/Logs/MCClose.log
+          kill "$pid"
+
+      - name: Upload the build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MCClose-build
+          path: |
+            build/MCClose.dmg
+            ${{ runner.temp }}/screen.png
+          if-no-files-found: ignore

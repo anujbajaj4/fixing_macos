@@ -1,0 +1,42 @@
+name: Release
+
+# Run from the Actions tab (Run workflow). Builds, tests, and publishes
+# v<VERSION> with MCClose.dmg and install.sh attached.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(tr -d '[:space:]' < VERSION)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "v$version is already released: bump VERSION first."; exit 1
+          fi
+
+      - name: Test and build
+        run: |
+          bash Tests/install_test.sh
+          scripts/build.sh --test
+          codesign --verify --deep --strict build/MCClose.app
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.v.outputs.version }}" build/MCClose.dmg install.sh \
+            --title "MC Close ${{ steps.v.outputs.version }}" \
+            --target "$GITHUB_SHA" \
+            --notes-file .github/release-notes.md
