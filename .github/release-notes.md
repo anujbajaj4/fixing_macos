@@ -1,6 +1,7 @@
 Control any window right from Mission Control: point at it, then use the buttons on its corner or a shortcut.
 
 ## What's new in 1.1.1
+- **No more lag, ever, from MC Close.** MC Close now only listens to the keyboard and mouse while Mission Control is open; the rest of the time it isn't in the path at all. In 1.0.0, updating could leave the old copy stalled in that path for minutes, which slowed down every click and key press. Updating now switches that off and quits the old copy before installing the new one, and the Update button only runs once.
 - **Better diagnosis for new macOS versions.** On macOS 27 Mission Control isn't drawn by the Dock any more, so MC Close can't see it yet. **Diagnose Mission Control…** now records which part of macOS draws it, so the next version can support it.
 - Updating no longer fills the log with "event tap was disabled" lines from the old copy.
 

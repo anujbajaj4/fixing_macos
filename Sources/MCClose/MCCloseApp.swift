@@ -154,16 +154,29 @@ final class AppState: ObservableObject {
         if alert.runModal() == .alertFirstButtonReturn { installUpdate() }
     }
 
-    /// Runs the same one-line installer as a first install. It quits this app,
-    /// replaces it, and opens the new version.
+    private var updating = false
+    /// Set by the app delegate: stop handling input before this copy is replaced.
+    var beforeUpdate: (() -> Void)?
+
+    /// Runs the same one-line installer as a first install, then quits. The installer
+    /// replaces the app and opens the new version. This copy gets out of the way first:
+    /// it removes its event tap and quits, so it can't stall the keyboard and mouse
+    /// while its files and permission are being replaced (that lagged a user's Mac in 1.0.0).
     func installUpdate() {
-        Log.write("installing update via installer")
+        guard !updating else { return }   // one update at a time
+        updating = true
+        Log.write("installing update: removing input handling and quitting; the installer reopens MC Close")
+        beforeUpdate?()
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/bash")
-        p.arguments = ["-c", AppState.installCommand + " >> \"$HOME/Library/Logs/MCClose-update.log\" 2>&1"]
+        p.arguments = ["-c", "sleep 1; (" + AppState.installCommand + ") >> \"$HOME/Library/Logs/MCClose-update.log\" 2>&1"]
+        p.standardInput = FileHandle.nullDevice
         do { try p.run() } catch {
+            updating = false
             Self.alert("Update failed to start", "Paste this into Terminal instead:\n\n\(AppState.installCommand)")
+            return
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
     }
 
     static func alert(_ title: String, _ text: String) {
@@ -191,6 +204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let os = ProcessInfo.processInfo.operatingSystemVersionString
         Log.write("MC Close \(AppState.version) launched on macOS \(os); Accessibility \(state.trusted ? "granted" : "not granted")")
 
+        state.beforeUpdate = { [weak self] in
+            self?.keyTap.shutDown()
+            self?.overlay.stop()
+        }
         state.onShowCloseButtonChange = { [weak self] on in
             guard let self else { return }
             self.overlay.showButtons = on
@@ -238,6 +255,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Track thumbnails (and show the buttons) while Mission Control is open.
         watcher.onChange = { [weak self] active in
             AppState.shared.missionControlOpen = active
+            // Input handling is on only while Mission Control is open.
+            self?.keyTap.setEnabled(active)
             if active { self?.overlay.start() } else { self?.overlay.stop() }
         }
         watcher.start()

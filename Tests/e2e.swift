@@ -140,6 +140,18 @@ func visibleScreenAX() -> CGRect {
     return CGRect(x: v.minX, y: h - v.maxY, width: v.width, height: v.height)
 }
 
+/// Is MC Close's event tap switched on? (nil if it has none.) macOS lists every tap.
+func mcCloseTapEnabled() -> Bool? {
+    var count: UInt32 = 0
+    guard CGGetEventTapList(0, nil, &count) == .success, count > 0 else { return nil }
+    var list = [CGEventTapInformation](repeating: CGEventTapInformation(), count: Int(count))
+    guard CGGetEventTapList(count, &list, &count) == .success else { return nil }
+    let pids = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.anujbajaj4.MCClose")
+        .map(\.processIdentifier))
+    let mine = list.prefix(Int(count)).filter { pids.contains($0.tappingProcess) }
+    return mine.isEmpty ? nil : mine.contains { $0.enabled }
+}
+
 /// Every on-screen window outside layer 0 (owner, layer, frame), to learn what Mission Control
 /// looks like in the window list on this macOS.
 func windowSurvey(_ label: String) {
@@ -187,11 +199,13 @@ shot("1-windows")
 ok(!logText().dropFirst(logAtStart).contains("Dock layout shows Mission Control (no notification"),
    "backup check stays quiet while Mission Control is closed")
 let logBefore = logText().count
+ok(mcCloseTapEnabled() == false, "MC Close is out of the keyboard/mouse path while Mission Control is closed (tap: \(String(describing: mcCloseTapEnabled())))")
 windowSurvey("Mission Control closed")
 sh("open -a 'Mission Control'")
 wait(2.5)
 shot("2-mission-control")
 windowSurvey("Mission Control open")
+ok(mcCloseTapEnabled() == true, "MC Close handles input while Mission Control is open")
 let opened = String(logText().dropFirst(logBefore))
 ok(opened.contains("Dock says AXExposeShowAllWindows") || opened.contains("Dock layout shows Mission Control (no notification"),
    "MC Close noticed Mission Control opening")
@@ -293,6 +307,7 @@ key(53)   // Escape
 wait(2)
 ok(noticedExit(since: logBefore), "MC Close noticed Mission Control closing")
 ok(overlayFrames().isEmpty, "buttons are gone after leaving Mission Control")
+ok(mcCloseTapEnabled() == false, "…and MC Close is out of the input path again")
 
 // ⌘W outside Mission Control must reach the app as usual.
 // Bring gamma to the front with Accessibility calls (an AppleScript here hung for 2 minutes in CI).

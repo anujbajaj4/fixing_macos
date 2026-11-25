@@ -23,6 +23,11 @@ final class KeyTap {
     fileprivate var swallowMouseUp = false
     fileprivate var loggedLostPermission = false
     fileprivate var disabledCount = 0
+    /// The tap is only switched on while Mission Control is open, so the rest of the time
+    /// MC Close is not in the keyboard and mouse path at all. (A stalled tap that is on
+    /// makes every key press and click on the Mac wait for it.)
+    fileprivate var wanted = false
+    fileprivate var reenables = 0
     private var source: CFRunLoopSource?
 
     @discardableResult
@@ -42,11 +47,18 @@ final class KeyTap {
             case .tapDisabledByTimeout, .tapDisabledByUserInput:
                 // macOS disables slow taps; turn ours back on, unless this copy of the app has
                 // lost its Accessibility permission (e.g. while an update replaces it).
+                guard me.wanted else { return Unmanaged.passUnretained(event) }
                 guard AXIsProcessTrusted() else {
                     if !me.loggedLostPermission {
                         me.loggedLostPermission = true
                         Log.write("event tap disabled: this copy no longer has Accessibility permission")
                     }
+                    return Unmanaged.passUnretained(event)
+                }
+                // If macOS keeps having to switch it off, stop: lag is worse than a missed ⌘W.
+                me.reenables += 1
+                guard me.reenables <= 5 else {
+                    if me.reenables == 6 { Log.write("event tap keeps timing out; leaving it off until Mission Control opens again") }
                     return Unmanaged.passUnretained(event)
                 }
                 if let tap = me.tap { CGEvent.tapEnable(tap: tap, enable: true) }
@@ -101,8 +113,26 @@ final class KeyTap {
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         self.source = source
-        CGEvent.tapEnable(tap: tap, enable: true)
-        Log.write("event tap started")
+        CGEvent.tapEnable(tap: tap, enable: wanted)
+        Log.write("event tap started (active only while Mission Control is open)")
         return true
+    }
+
+    /// Switch input handling on (Mission Control opened) or off (closed).
+    func setEnabled(_ on: Bool) {
+        wanted = on
+        reenables = 0
+        swallowMouseUp = false
+        if let tap { CGEvent.tapEnable(tap: tap, enable: on) }
+    }
+
+    /// Remove the tap completely (before an update replaces this copy of the app).
+    func shutDown() {
+        setEnabled(false)
+        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        if let tap { CFMachPortInvalidate(tap) }
+        tap = nil
+        source = nil
+        Log.write("event tap removed")
     }
 }
