@@ -71,7 +71,9 @@ func overlayFrames() -> [CGRect] {
     let pids = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.anujbajaj4.MCClose")
         .map { Int($0.processIdentifier) })
     let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-    return info.filter { pids.contains(($0[kCGWindowOwnerPID as String] as? Int) ?? -1) }
+    // Only the ✕ panel: it sits far above normal windows; the menu-bar icon (layer 25) doesn't.
+    return info.filter { pids.contains(($0[kCGWindowOwnerPID as String] as? Int) ?? -1)
+                         && (($0[kCGWindowLayer as String] as? Int) ?? 0) >= 1000 }
         .compactMap { d in (d[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } }
 }
 

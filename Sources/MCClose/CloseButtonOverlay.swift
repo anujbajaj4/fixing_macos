@@ -105,7 +105,12 @@ final class CloseButtonOverlay: NSObject {
         return panel
     }
 
-    @objc private func closeClicked() {
+    /// Is `point` (AX coordinates) on the visible ✕? Used by the event tap.
+    func isOnButton(_ point: CGPoint) -> Bool {
+        timer != nil && panel.isVisible && current != nil && buttonRectAX.contains(point)
+    }
+
+    @objc func closeClicked() {
         guard let current else { return }
         if WindowCloser.close(current, via: "✕ button") {
             self.current = nil

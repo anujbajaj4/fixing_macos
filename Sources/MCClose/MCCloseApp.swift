@@ -220,6 +220,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ⌘W while Mission Control is open closes the window under the pointer.
         keyTap.shouldHandle = { [weak self] in self?.watcher.isActive ?? false }
         keyTap.onClose = { WindowCloser.closeWindowUnderMouse() }
+        // Clicks on the ✕ are caught by the tap: Mission Control would take them otherwise.
+        keyTap.isOnCloseButton = { [weak self] point in self?.overlay.isOnButton(point) ?? false }
+        keyTap.onCloseButtonClick = { [weak self] in self?.overlay.closeClicked() }
         if !keyTap.start() {
             // The permission can take a moment to apply to a running app; try again shortly.
             started = false
