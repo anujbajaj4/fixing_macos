@@ -88,6 +88,20 @@ enum ThumbnailFilter {
     }
 }
 
+/// Backup way to tell that Mission Control is open, for macOS versions where the Dock
+/// doesn't post its notifications: while Mission Control (or App Exposé) is showing, the
+/// Dock has a group covering a whole screen (seen on macOS 15: AXGroup "Mission Control",
+/// 0,0 1024x768). Normally it only has its icon row (an AXList).
+enum MissionControlLayout {
+    static func looksOpen(dockElements: [(role: String, frame: CGRect)], screens: [CGRect]) -> Bool {
+        dockElements.contains { el in
+            el.role == "AXGroup" && screens.contains { screen in
+                el.frame.width >= screen.width * 0.8 && el.frame.height >= screen.height * 0.8
+            }
+        }
+    }
+}
+
 enum Geometry {
     /// Which of `frames` the pointer is on. If several contain it, the smallest wins
     /// (the most specific one). nil if none.

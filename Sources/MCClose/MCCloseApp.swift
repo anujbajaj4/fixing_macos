@@ -37,6 +37,7 @@ struct MenuContent: View {
                                                set: { state.setStartAtLogin($0) }))
         Divider()
         Button("Open Log") { NSWorkspace.shared.open(Log.url) }
+        Button("Diagnose Mission Control…") { AppDelegate.diagnose() }
         Button("Check for Updates") { state.checkForUpdates(userInitiated: true) }
         if state.trusted {
             Button("Set Up…") { AppDelegate.showWelcome() }
@@ -177,6 +178,7 @@ final class AppState: ObservableObject {
 // MARK: - App delegate: wires the pieces together
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static weak var current: AppDelegate?
     private let watcher = MissionControlWatcher()
     private let keyTap = KeyTap()
     private let overlay = WindowButtonsOverlay()
@@ -184,6 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var started = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppDelegate.current = self
         let state = AppState.shared
         let os = ProcessInfo.processInfo.operatingSystemVersionString
         Log.write("MC Close \(AppState.version) launched on macOS \(os); Accessibility \(state.trusted ? "granted" : "not granted")")
@@ -238,6 +241,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if active { self?.overlay.start() } else { self?.overlay.stop() }
         }
         watcher.start()
+    }
+
+    static func diagnose() {
+        guard let d = current else { return }
+        Diagnostics.run(watcherActive: { [weak d] in d?.watcher.isActive ?? false },
+                        watcherSource: { [weak d] in d?.watcher.lastSource ?? "" })
     }
 
     static func showWelcome() {

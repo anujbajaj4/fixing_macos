@@ -48,6 +48,20 @@ check(ThumbnailFilter.isBoundary(role: "AXDockItem") && !ThumbnailFilter.isBound
       "walking up stops at Dock items")
 check(!ThumbnailFilter.isBoundary(role: "AXGroup"), "walking up passes through untitled groups")
 
+// MARK: MissionControlLayout (backup detection)
+let screens = [CGRect(x: 0, y: 0, width: 1024, height: 768), CGRect(x: 1024, y: 0, width: 1920, height: 1080)]
+check(MissionControlLayout.looksOpen(dockElements: [("AXList", CGRect(x: 0, y: 700, width: 900, height: 60)),
+                                                    ("AXGroup", CGRect(x: 0, y: 0, width: 1024, height: 768))], screens: screens),
+      "full-screen Dock group means Mission Control is open")
+check(MissionControlLayout.looksOpen(dockElements: [("AXGroup", CGRect(x: 1024, y: 0, width: 1920, height: 1080))], screens: screens),
+      "…on a second display too")
+check(!MissionControlLayout.looksOpen(dockElements: [("AXList", CGRect(x: 0, y: 700, width: 900, height: 60))], screens: screens),
+      "just the Dock's icon row: closed")
+check(!MissionControlLayout.looksOpen(dockElements: [("AXGroup", CGRect(x: 0, y: 600, width: 300, height: 200))], screens: screens),
+      "a small Dock group (e.g. a stack) isn't Mission Control")
+check(!MissionControlLayout.looksOpen(dockElements: [("AXList", CGRect(x: 0, y: 0, width: 1024, height: 768))], screens: screens),
+      "only groups count")
+
 // MARK: Geometry
 let ax = CGRect(x: 100, y: 50, width: 24, height: 24)
 check(Geometry.appKitRect(fromAX: ax, mainScreenHeight: 1000) == CGRect(x: 100, y: 926, width: 24, height: 24),

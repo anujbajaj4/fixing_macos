@@ -68,7 +68,10 @@ defaults write io.github.anujbajaj4.MCClose VerboseLog -bool YES
 - **Nothing happens after an update or rebuild.** Each build has a new signature, so macOS's old
   permission no longer applies. Choose **Set Up… ▸ Reset Permission** in the menu and switch MC Close on again.
 - **No "Dock says AXExposeShowAllWindows" lines when you open Mission Control.** Your macOS version
-  doesn't send these notifications, so MC Close can't tell when Mission Control is open.
+  doesn't send these notifications (a user's macOS 27 didn't). MC Close then notices Mission Control
+  from the Dock's layout instead and logs "Dock layout shows Mission Control". If neither appears,
+  choose **Diagnose Mission Control…** in the menu, follow the steps, and send the log: it records what
+  your Mac's Dock shows in Mission Control (window titles left out).
 - **"pointer … is not on any of the 0 window thumbnails".** This macOS shows Mission Control's
   thumbnails differently from macOS 15. Open Accessibility Inspector (Xcode ▸ Open Developer Tool),
   open Mission Control and look at what the Dock shows.

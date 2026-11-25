@@ -137,6 +137,7 @@ func visibleScreenAX() -> CGRect {
 
 // MARK: - Setup
 
+let logAtStart = logText().count
 ok(AXIsProcessTrusted(), "this test process has Accessibility (needed to drive the mouse and keyboard)")
 ok(!NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.anujbajaj4.MCClose").isEmpty,
    "MC Close is running")
@@ -165,11 +166,17 @@ shot("1-windows")
 
 // MARK: - Mission Control
 
+// No false alarm: with Mission Control closed, the backup check must not think it's open.
+ok(!logText().dropFirst(logAtStart).contains("Dock layout shows Mission Control (no notification"),
+   "backup check stays quiet while Mission Control is closed")
 let logBefore = logText().count
 sh("open -a 'Mission Control'")
 wait(2.5)
 shot("2-mission-control")
-ok(String(logText().dropFirst(logBefore)).contains("Dock says AXExposeShowAllWindows"), "MC Close noticed Mission Control opening")
+let opened = String(logText().dropFirst(logBefore))
+ok(opened.contains("Dock says AXExposeShowAllWindows") || opened.contains("Dock layout shows Mission Control (no notification"),
+   "MC Close noticed Mission Control opening")
+print("detected by: \(opened.contains("Dock layout shows") ? "Dock layout (backup)" : "Dock notification")")
 
 let elements = dockElements()
 print("Dock elements with a title while Mission Control is open (\(elements.count)):")
@@ -260,11 +267,15 @@ if hover("e2e-theta") != nil, clickButton(.fullScreen) {
 } else { ok(false, "buttons shown on theta") }
 
 // MARK: leaving Mission Control
-if !logText().dropFirst(logBefore).contains("Dock says AXExposeExit") {
+func noticedExit() -> Bool {
+    let l = logText().dropFirst(logBefore)
+    return l.contains("Dock says AXExposeExit") || l.contains("Dock layout shows Mission Control closed")
+}
+if !noticedExit() {
     key(53)   // Escape
     wait(2)
 }
-ok(logText().dropFirst(logBefore).contains("Dock says AXExposeExit"), "MC Close noticed Mission Control closing")
+ok(noticedExit(), "MC Close noticed Mission Control closing")
 ok(overlayFrames().isEmpty, "buttons are gone after leaving Mission Control")
 
 // Back out of full screen, then check ⌘W outside Mission Control reaches the app.
