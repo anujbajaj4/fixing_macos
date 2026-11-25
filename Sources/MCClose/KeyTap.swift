@@ -14,8 +14,9 @@ final class KeyTap {
     var isPointerOnThumbnail: () -> Bool = { false }
     /// Called on the main thread for a shortcut.
     var onShortcut: (WindowAction) -> Void = { _ in }
-    /// The window button at this point (AX / event coordinates), if any.
-    var buttonAt: (CGPoint) -> WindowAction? = { _ in nil }
+    /// The window button at this point (AX / event coordinates), if any; the Bool is
+    /// whether Option is held (Option-click on green zooms, as on a real window).
+    var buttonAt: (CGPoint, Bool) -> WindowAction? = { _, _ in nil }
     /// Called on the main thread when a window button is clicked.
     var onButton: (WindowAction) -> Void = { _ in }
 
@@ -80,7 +81,7 @@ final class KeyTap {
                 }
 
             case .leftMouseDown:
-                if me.isActive(), let action = me.buttonAt(event.location) {
+                if me.isActive(), let action = me.buttonAt(event.location, event.flags.contains(.maskAlternate)) {
                     me.swallowMouseUp = true
                     DispatchQueue.main.async { me.onButton(action) }
                     return nil

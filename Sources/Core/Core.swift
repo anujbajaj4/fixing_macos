@@ -171,6 +171,40 @@ enum Geometry {
     }
 }
 
+/// Where the buttons sit on each thumbnail: like a window's own controls, inside the
+/// top-left corner of its title bar. All in AX coordinates (top-left origin).
+enum ButtonLayout {
+    static let diameter: CGFloat = 13     // macOS window controls are 12–14 pt
+    static let gap: CGFloat = 7           // space between circles
+    static let inset: CGFloat = 9         // from the thumbnail's left and top edges
+    static let slop: CGFloat = 3          // extra hit area around each circle
+
+    static func rects(forThumbnail f: CGRect, count: Int) -> [CGRect] {
+        (0..<count).map { i in
+            CGRect(x: f.minX + inset + CGFloat(i) * (diameter + gap), y: f.minY + inset,
+                   width: diameter, height: diameter)
+        }
+    }
+
+    /// The whole row, with slop: hovering it shows the symbols, like on a real window.
+    static func groupRect(forThumbnail f: CGRect, count: Int) -> CGRect {
+        let r = rects(forThumbnail: f, count: count)
+        guard let first = r.first, let last = r.last else { return .zero }
+        return first.union(last).insetBy(dx: -slop - 2, dy: -slop - 2)
+    }
+
+    /// Which button of which thumbnail is at `p`, if any.
+    static func hit(_ p: CGPoint, thumbnails: [CGRect], count: Int) -> (thumbnail: Int, button: Int)? {
+        for (t, f) in thumbnails.enumerated() {
+            for (b, r) in rects(forThumbnail: f, count: count).enumerated()
+            where r.insetBy(dx: -slop, dy: -slop).contains(p) {
+                return (t, b)
+            }
+        }
+        return nil
+    }
+}
+
 enum Version {
     /// "1.2.10" > "1.2.9"; a leading "v" is ignored; missing parts count as 0.
     static func isNewer(_ candidate: String, than current: String) -> Bool {

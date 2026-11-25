@@ -98,6 +98,19 @@ check(!Geometry.isFilling(CGRect(x: 100, y: 100, width: 800, height: 600), visib
 check(Geometry.axRect(fromAppKit: CGRect(x: 0, y: 0, width: 1440, height: 875), mainScreenHeight: 900)
         == CGRect(x: 0, y: 25, width: 1440, height: 875), "AppKit visible frame to AX (menu bar at top)")
 
+// MARK: ButtonLayout (fixed buttons on every thumbnail)
+let thumbA = CGRect(x: 100, y: 200, width: 400, height: 300)
+let thumbB = CGRect(x: 600, y: 200, width: 400, height: 300)
+let r4 = ButtonLayout.rects(forThumbnail: thumbA, count: 4)
+check(r4.count == 4 && r4[0] == CGRect(x: 109, y: 209, width: 13, height: 13), "first button inside the top-left corner")
+check(r4[1].minX - r4[0].minX == 20 && r4[3].minX == 169, "buttons 20 pt apart, like window controls")
+check(ButtonLayout.hit(CGPoint(x: 115, y: 215), thumbnails: [thumbA, thumbB], count: 4).map { $0.thumbnail == 0 && $0.button == 0 } == true, "hit close on first thumbnail")
+check(ButtonLayout.hit(CGPoint(x: 675, y: 215), thumbnails: [thumbA, thumbB], count: 4).map { $0.thumbnail == 1 && $0.button == 3 } == true, "hit zoom on second thumbnail")
+check(ButtonLayout.hit(CGPoint(x: 107, y: 207), thumbnails: [thumbA], count: 4).map { $0.thumbnail == 0 && $0.button == 0 } == true, "a little slop around a button still hits")
+check(ButtonLayout.hit(CGPoint(x: 300, y: 350), thumbnails: [thumbA], count: 4) == nil, "middle of a thumbnail is not a button")
+check(ButtonLayout.hit(CGPoint(x: 126, y: 215), thumbnails: [thumbA], count: 4) == nil, "between buttons is not a button")
+check(ButtonLayout.groupRect(forThumbnail: thumbA, count: 4).contains(CGPoint(x: 126, y: 215)), "between buttons still counts as hovering the group")
+
 // MARK: Version
 check(Version.isNewer("1.2.10", than: "1.2.9"), "numeric, not string, compare")
 check(Version.isNewer("v1.1", than: "1.0.9"), "leading v and short version")

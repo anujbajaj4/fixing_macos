@@ -100,8 +100,35 @@ func thumbnail(_ name: String) -> CGRect? {
 
 // MARK: - Helpers for this test
 
-let buttonSize: CGFloat = 22, buttonGap: CGFloat = 6   // as in WindowButtonsOverlay
-enum Button: Int { case close = 0, minimize, fullScreen, zoom }
+enum Button: Int { case close = 0, minimize, fullScreen, zoom }   // ButtonLayout order
+
+/// Centre of a button on a thumbnail (from the app's own ButtonLayout, compiled in).
+func buttonCenter(_ b: Button, on thumb: CGRect) -> CGPoint {
+    center(ButtonLayout.rects(forThumbnail: thumb, count: 4)[b.rawValue])
+}
+
+/// The colour on screen at a point, as 0–255 sRGB.
+func pixel(at p: CGPoint) -> (r: Int, g: Int, b: Int)? {
+    let file = "\(shots)/pixel.png"
+    sh("rm -f '\(file)'; screencapture -x -R\(Int(p.x)),\(Int(p.y)),1,1 '\(file)' 2>/dev/null")
+    guard let data = FileManager.default.contents(atPath: file), let rep = NSBitmapImageRep(data: data),
+          let c = rep.colorAt(x: rep.pixelsWide / 2, y: rep.pixelsHigh / 2)?.usingColorSpace(.sRGB) else { return nil }
+    return (Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
+}
+/// A spot inside a button, clear of its symbol.
+func fillSpot(_ b: Button, on thumb: CGRect) -> CGPoint {
+    let c = buttonCenter(b, on: thumb)
+    return CGPoint(x: c.x, y: c.y - 4)
+}
+func looks(_ px: (r: Int, g: Int, b: Int)?, like b: Button) -> Bool {
+    guard let px else { return false }
+    switch b {
+    case .close:      return px.r > 200 && px.g < 140 && px.b < 140
+    case .minimize:   return px.r > 200 && px.g > 140 && px.b < 120
+    case .fullScreen: return px.g > 150 && px.r < 120 && px.b < 130
+    case .zoom:       return abs(px.r - px.b) < 25 && px.r > 120 && px.r < 200
+    }
+}
 
 func teWindow(_ title: String) -> AXUIElement? {
     guard let te = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.TextEdit").first else { return nil }
@@ -125,12 +152,10 @@ func hover(_ name: String) -> CGRect? {
     move(to: center(f)); wait(0.6)
     return f
 }
-/// Click one of the buttons on the hovered thumbnail.
-func clickButton(_ b: Button) -> Bool {
-    guard let strip = overlayFrames().first else { return false }
-    let p = CGPoint(x: strip.minX + buttonSize / 2 + CGFloat(b.rawValue) * (buttonSize + buttonGap), y: strip.midY)
-    // Approach from the thumbnail side so the overlay keeps targeting the same window.
-    move(to: CGPoint(x: p.x + 3, y: p.y + 3)); wait(0.2)
+/// Click one of the buttons on a thumbnail.
+func clickButton(_ b: Button, on thumb: CGRect) -> Bool {
+    let p = buttonCenter(b, on: thumb)
+    move(to: p); wait(0.3)
     click(p)
     return true
 }
@@ -217,16 +242,23 @@ for e in elements.prefix(60) where e.role != "AXDockItem" {
     print("  \(e.role)\(e.subrole.isEmpty ? "" : "/" + e.subrole)  \"\(e.title)\"  \(Int(e.frame.minX)),\(Int(e.frame.minY)) \(Int(e.frame.width))x\(Int(e.frame.height))")
 }
 
-// MARK: Buttons appear, in the right place
+// MARK: Buttons on every window, in place, in Apple's colours
+wait(1)   // the buttons fade in once Mission Control has settled
+ok(!overlayFrames().isEmpty, "the button layer is showing")
+for name in ["e2e-beta", "e2e-delta", "e2e-zeta"] {
+    if let f = thumbnail(name) {
+        let colours = [Button.close, .minimize, .fullScreen, .zoom].map { looks(pixel(at: fillSpot($0, on: f)), like: $0) }
+        ok(!colours.contains(false), "\(name) has its own red, yellow, green and graphite buttons in its corner \(colours)")
+    } else { ok(false, "found \(name)'s thumbnail") }
+}
 if let alpha = hover("e2e-alpha") {
-    let ov = overlayFrames()
-    shot("3-hover-alpha", inline: true)
-    ok(!ov.isEmpty, "buttons appear when hovering a thumbnail")
-    if let b = ov.first {
-        ok(abs(b.width - (4 * buttonSize + 3 * buttonGap)) < 2, "four buttons: close, minimize, full screen, zoom (strip \(b))")
-        ok(abs(b.minX + buttonSize / 2 - alpha.minX) < 3 && abs(b.midY - alpha.minY) < 3,
-           "close button sits on the thumbnail's top-left corner")
-    }
+    let plain = pixel(at: buttonCenter(.close, on: alpha))
+    move(to: buttonCenter(.minimize, on: alpha)); wait(0.4)   // over the buttons: symbols appear
+    shot("3-hover-buttons", inline: true)
+    let withSymbol = pixel(at: buttonCenter(.close, on: alpha))
+    ok(looks(plain, like: .close) && withSymbol.map { $0.r < 200 } == true,
+       "symbols appear only while the pointer is over a window's buttons (\(String(describing: plain)) → \(String(describing: withSymbol)))")
+    move(to: center(alpha)); wait(0.3)
     // MARK: ⌘W
     key(13, command: true)
     wait(1.5)
@@ -235,13 +267,13 @@ if let alpha = hover("e2e-alpha") {
 } else { ok(false, "found alpha's thumbnail") }
 
 // MARK: Close button
-if hover("e2e-beta") != nil, clickButton(.close) {
+if let f = hover("e2e-beta"), clickButton(.close, on: f) {
     wait(1.5)
     ok(teWindow("e2e-beta.txt") == nil, "close button closed the hovered window")
 } else { ok(false, "close button shown on beta") }
 
 // MARK: Minimize button
-if hover("e2e-delta") != nil, clickButton(.minimize) {
+if let f = hover("e2e-delta"), clickButton(.minimize, on: f) {
     wait(1.5)
     ok(boolAttr(teWindow("e2e-delta.txt"), kAXMinimizedAttribute), "minimize button minimized the hovered window")
 } else { ok(false, "buttons shown on delta") }
@@ -254,7 +286,7 @@ if hover("e2e-epsilon") != nil {
 } else { ok(false, "found epsilon's thumbnail") }
 
 // MARK: Zoom button, then ⌥⌘F restores
-if hover("e2e-zeta") != nil, clickButton(.zoom) {
+if let f = hover("e2e-zeta"), clickButton(.zoom, on: f) {
     wait(1.5)
     let z = teWindow("e2e-zeta.txt").flatMap(frame) ?? .zero
     let v = visibleScreenAX()
@@ -285,12 +317,6 @@ if hover("Calculator") != nil {
     ok(teWindow("e2e-gamma.txt") != nil, "…and left other apps alone")
 } else { ok(false, "found Calculator's thumbnail") }
 
-// MARK: Dock icons are not targets
-wait(0.8)
-if let dockIcon = dockElements().first(where: { $0.role == "AXDockItem" && $0.title == "TextEdit" }) {
-    move(to: center(dockIcon.frame)); wait(0.6)
-    ok(overlayFrames().isEmpty, "no buttons on a Dock icon in Mission Control")
-}
 
 func waitFor(_ seconds: Double, _ cond: () -> Bool) -> Bool {
     let end = Date().addingTimeInterval(seconds)
@@ -329,7 +355,7 @@ if teWindow("e2e-gamma.txt") != nil {
 let logBeforeFullScreen = logText().count
 sh("open -a 'Mission Control'")
 wait(2.5)
-if hover("e2e-theta") != nil, clickButton(.fullScreen) {
+if let f = hover("e2e-theta"), clickButton(.fullScreen, on: f) {
     let became = waitFor(8) { boolAttr(teWindow("e2e-theta.txt"), "AXFullScreen") }
     shot("6-after-full-screen", inline: true)
     ok(became, "full-screen button left Mission Control and put the hovered window in full screen")

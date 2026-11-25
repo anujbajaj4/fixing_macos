@@ -1,6 +1,10 @@
 Control any window right from Mission Control: point at it, then use the buttons on its corner or a shortcut.
 
-## What's new in 1.2.0
+## What's new in 1.3.0
+- **Buttons on every window, where they belong.** When Mission Control opens, each window gets its own controls in the top-left corner of its title bar, in Apple's red, yellow and green (plus a graphite + for zoom), instead of one set following the pointer. Like on a real window, the symbols appear when you point at the buttons, and holding Option turns green into +.
+- The buttons fade in once Mission Control has settled and follow the layout as windows close or move. Clicking anywhere else on a window still picks it, as usual.
+
+## In 1.2.0
 - **Works on macOS 27.** Apple moved Mission Control out of the Dock into a part of macOS called WindowManager, and stopped announcing when it opens, so earlier versions never showed their buttons there. MC Close now finds Mission Control and its windows in WindowManager (and still in the Dock on older macOS).
 - **Picks the right window more reliably on macOS 27,** which tells MC Close which app each window belongs to.
 - **No more lag, ever, from MC Close.** It only listens to the keyboard and mouse while Mission Control is open; the rest of the time it isn't in the path at all. In 1.0.0, updating could leave the old copy stalled in that path for minutes, slowing every click and key press. Updating now switches that off and quits the old copy first, and the Update button only runs once.

@@ -1,14 +1,14 @@
 # MC Close
 
-Control windows right from **Mission Control** on your Mac. Open Mission Control and point at a window:
-four buttons appear on its corner.
+Control windows right from **Mission Control** on your Mac. Open Mission Control and every window gets
+its own buttons in the corner of its title bar, in Apple's colours: close, minimize, full screen, and zoom.
 
 | Button | Does | Shortcut |
 |---|---|---|
-| ✕ | Close the window | ⌘W |
-| − | Minimize it | ⌘M |
-| ⤢ | Full screen (its own space) | ⌃⌘F |
-| + | Zoom: fill the screen in place, like Option-clicking the green button. Again to restore. | ⌥⌘F |
+| 🔴 ✕ | Close the window | ⌘W |
+| 🟡 − | Minimize it | ⌘M |
+| 🟢 ⤢ | Full screen (its own space) | ⌃⌘F |
+| ⚪️ + | Zoom: fill the screen in place, like Option-clicking the green button (which also works). Again to restore. | ⌥⌘F |
 | | Hide the app | ⌘H |
 | | Quit the app | ⌘Q |
 
@@ -43,7 +43,7 @@ notarized by Apple: click **Done**, then System Settings ▸ Privacy & Security 
 | Spotting Mission Control | `Sources/MCClose/MissionControlWatcher.swift` | The Dock draws Mission Control and posts accessibility notifications when it opens and closes. MC Close listens for them and does nothing in between. |
 | Finding the window | `Sources/MCClose/WindowCloser.swift`, `Sources/Core/Core.swift` | Asks the Dock for Mission Control's window thumbnails (macOS's "what's under the pointer" sees through them), reads the title of the one under the pointer and finds the one real window with that title. Two windows with the same title: it does nothing rather than guess. |
 | Shortcuts and clicks | `Sources/MCClose/KeyTap.swift` | An event tap that, only while Mission Control is open, handles the shortcuts when the pointer is on a window, and catches clicks on the buttons (Mission Control would otherwise take them). Everything else passes through. |
-| Buttons | `Sources/MCClose/WindowButtonsOverlay.swift` | Close, minimize, full screen and zoom, floating on the corner of the thumbnail under the pointer. |
+| Buttons | `Sources/MCClose/WindowButtonsOverlay.swift` | A click-through layer per screen that draws close, minimize, full screen and zoom in the corner of every thumbnail, Apple-style; symbols show on hover. |
 | Acting on the window | `Sources/MCClose/WindowCloser.swift` | Presses the window's own buttons, sets minimized/full screen, resizes for zoom, or hides/quits the app. |
 | Menu, welcome window, updates | `Sources/MCClose/MCCloseApp.swift` | Menu-bar icon, first-run setup, Start at Login, a once-a-month update check against GitHub releases. |
 

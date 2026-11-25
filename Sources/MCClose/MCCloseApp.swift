@@ -244,7 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyTap.isPointerOnThumbnail = { [weak self] in self?.overlay.isPointerOnThumbnail() ?? false }
         keyTap.onShortcut = { action in WindowCloser.performUnderMouse(action) }
         // Clicks on the buttons are caught by the tap: Mission Control would take them otherwise.
-        keyTap.buttonAt = { [weak self] point in self?.overlay.button(at: point) }
+        keyTap.buttonAt = { [weak self] point, option in self?.overlay.button(at: point, optionHeld: option) }
         keyTap.onButton = { [weak self] action in self?.overlay.perform(action) }
         if !keyTap.start() {
             // The permission can take a moment to apply to a running app; try again shortly.
@@ -306,7 +306,7 @@ struct WelcomeView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Control windows from Mission Control")
                 .font(.title2.bold())
-            Text("Open Mission Control and point at a window. Buttons appear on its corner: close, minimize, full screen and zoom (+ fills the screen without a separate space, like Option-clicking the green button).")
+            Text("Open Mission Control: every window gets its own buttons in its corner, just like its title bar: close, minimize, full screen, and zoom (+ fills the screen without a separate space; Option-clicking green does the same).")
                 .fixedSize(horizontal: false, vertical: true)
             Text("Shortcuts: " + Shortcut.summary)
                 .font(.callout).foregroundStyle(.secondary)
