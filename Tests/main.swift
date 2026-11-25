@@ -108,7 +108,7 @@ check(ButtonLayout.hit(CGPoint(x: 115, y: 215), thumbnails: [thumbA, thumbB], co
 check(ButtonLayout.hit(CGPoint(x: 675, y: 215), thumbnails: [thumbA, thumbB], count: 4).map { $0.thumbnail == 1 && $0.button == 3 } == true, "hit zoom on second thumbnail")
 check(ButtonLayout.hit(CGPoint(x: 107, y: 207), thumbnails: [thumbA], count: 4).map { $0.thumbnail == 0 && $0.button == 0 } == true, "a little slop around a button still hits")
 check(ButtonLayout.hit(CGPoint(x: 300, y: 350), thumbnails: [thumbA], count: 4) == nil, "middle of a thumbnail is not a button")
-check(ButtonLayout.hit(CGPoint(x: 126, y: 215), thumbnails: [thumbA], count: 4) == nil, "between buttons is not a button")
+check(ButtonLayout.hit(CGPoint(x: 125.5, y: 215), thumbnails: [thumbA], count: 4) == nil, "the sliver between two buttons is not a button")
 check(ButtonLayout.groupRect(forThumbnail: thumbA, count: 4).contains(CGPoint(x: 126, y: 215)), "between buttons still counts as hovering the group")
 
 // MARK: Version
