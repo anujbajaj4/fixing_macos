@@ -259,44 +259,47 @@ if let dockIcon = dockElements().first(where: { $0.role == "AXDockItem" && $0.ti
     ok(overlayFrames().isEmpty, "no buttons on a Dock icon in Mission Control")
 }
 
-// MARK: Full-screen button (last: it leaves Mission Control)
 func waitFor(_ seconds: Double, _ cond: () -> Bool) -> Bool {
     let end = Date().addingTimeInterval(seconds)
     while Date() < end { if cond() { return true }; wait(0.25) }
     return cond()
 }
-if hover("e2e-theta") != nil, clickButton(.fullScreen) {
-    let became = waitFor(8) { boolAttr(teWindow("e2e-theta.txt"), "AXFullScreen") }
-    shot("6-after-full-screen", inline: true)
-    ok(became, "full-screen button left Mission Control and put the hovered window in full screen")
-} else { ok(false, "buttons shown on theta") }
 
 // MARK: leaving Mission Control
-func noticedExit() -> Bool {
-    let l = logText().dropFirst(logBefore)
+func noticedExit(since offset: Int) -> Bool {
+    let l = logText().dropFirst(offset)
     return l.contains("Dock says AXExposeExit") || l.contains("Dock layout shows Mission Control closed")
 }
-if !noticedExit() {
-    key(53)   // Escape
-    wait(2)
-}
-ok(noticedExit(), "MC Close noticed Mission Control closing")
+key(53)   // Escape
+wait(2)
+ok(noticedExit(since: logBefore), "MC Close noticed Mission Control closing")
 ok(overlayFrames().isEmpty, "buttons are gone after leaving Mission Control")
 
-// Back out of full screen, then check ⌘W outside Mission Control reaches the app.
-if let theta = teWindow("e2e-theta.txt"), boolAttr(theta, "AXFullScreen") {
-    _ = AXUIElementSetAttributeValue(theta, "AXFullScreen" as CFString, kCFBooleanFalse)
-    _ = waitFor(8) { !boolAttr(teWindow("e2e-theta.txt"), "AXFullScreen") }
-    wait(1.5)
-}
+// ⌘W outside Mission Control must reach the app as usual.
 sh("osascript -e 'tell application \"TextEdit\"' -e 'activate' -e 'set index of window \"e2e-gamma.txt\" to 1' -e 'end tell' </dev/null 2>/dev/null")
 wait(1.5)
 if teWindow("e2e-gamma.txt") != nil {
     key(13, command: true)
-    wait(1.5)
-    ok(teWindow("e2e-gamma.txt") == nil, "⌘W outside Mission Control still works in the app (TextEdit closed its window)")
+    ok(waitFor(4) { teWindow("e2e-gamma.txt") == nil },
+       "⌘W outside Mission Control still works in the app (TextEdit closed its window)")
 } else {
     ok(false, "gamma window still open before pass-through test")
+}
+
+// MARK: Full-screen button (last: it leaves Mission Control and changes spaces)
+let logBeforeFullScreen = logText().count
+sh("open -a 'Mission Control'")
+wait(2.5)
+if hover("e2e-theta") != nil, clickButton(.fullScreen) {
+    let became = waitFor(8) { boolAttr(teWindow("e2e-theta.txt"), "AXFullScreen") }
+    shot("6-after-full-screen", inline: true)
+    ok(became, "full-screen button left Mission Control and put the hovered window in full screen")
+    ok(noticedExit(since: logBeforeFullScreen), "…and MC Close noticed Mission Control closing")
+} else { ok(false, "buttons shown on theta") }
+if let theta = teWindow("e2e-theta.txt"), boolAttr(theta, "AXFullScreen") {
+    _ = AXUIElementSetAttributeValue(theta, "AXFullScreen" as CFString, kCFBooleanFalse)
+    _ = waitFor(8) { !boolAttr(teWindow("e2e-theta.txt"), "AXFullScreen") }
+    wait(1.5)
 }
 
 sh("osascript -e 'tell application \"TextEdit\" to quit saving no' </dev/null 2>/dev/null")
