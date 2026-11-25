@@ -15,7 +15,7 @@ enum WindowMatcher {
     enum Outcome: Equatable {
         case match(Int)          // index into the candidates
         case none
-        case ambiguous(Int)      // number of equally good candidates
+        case ambiguous([Int])    // the equally good candidates
     }
 
     /// Pick the real window behind a Mission Control thumbnail, by title.
@@ -41,10 +41,33 @@ enum WindowMatcher {
             }
         }
         if exact.count == 1 { return .match(exact[0]) }
-        if exact.count > 1 { return .ambiguous(exact.count) }
+        if exact.count > 1 { return .ambiguous(exact) }
         if loose.count == 1 { return .match(loose[0]) }
-        if loose.count > 1 { return .ambiguous(loose.count) }
+        if loose.count > 1 { return .ambiguous(loose) }
         return .none
+    }
+}
+
+/// What can be done to the window under the pointer in Mission Control.
+enum WindowAction: String, CaseIterable {
+    case close, minimize, fullScreen, zoom, hideApp, quitApp
+
+    /// The buttons drawn on a thumbnail, left to right: the window's own three controls,
+    /// then Zoom, which is what Option-clicking the green button does (its glyph turns into +).
+    static let buttons: [WindowAction] = [.close, .minimize, .fullScreen, .zoom]
+
+    /// Acts on the whole app rather than one window.
+    var isAppAction: Bool { self == .hideApp || self == .quitApp }
+
+    var label: String {
+        switch self {
+        case .close: return "Close"
+        case .minimize: return "Minimize"
+        case .fullScreen: return "Full Screen"
+        case .zoom: return "Zoom"
+        case .hideApp: return "Hide App"
+        case .quitApp: return "Quit App"
+        }
     }
 }
 
@@ -80,9 +103,32 @@ enum Geometry {
         CGRect(x: r.minX, y: h - r.maxY, width: r.width, height: r.height)
     }
 
-    /// Where the ✕ goes: centred on the thumbnail's top-left corner (AX coordinates).
-    static func closeButtonRect(forThumbnail f: CGRect, size: CGFloat) -> CGRect {
-        CGRect(x: f.minX - size / 2, y: f.minY - size / 2, width: size, height: size)
+    /// The same flip the other way (it is its own inverse).
+    static func axRect(fromAppKit r: CGRect, mainScreenHeight h: CGFloat) -> CGRect {
+        appKitRect(fromAX: r, mainScreenHeight: h)
+    }
+
+    /// Zoom toggles: a window that already fills the usable screen goes back to its
+    /// previous size. "Fills" allows a few points of slack, since apps round sizes.
+    static func isFilling(_ window: CGRect, _ visible: CGRect, tolerance: CGFloat = 8) -> Bool {
+        abs(window.minX - visible.minX) <= tolerance && abs(window.minY - visible.minY) <= tolerance
+            && abs(window.width - visible.width) <= tolerance && abs(window.height - visible.height) <= tolerance
+    }
+
+    /// The row of window buttons: the first (close) is centred on the thumbnail's
+    /// top-left corner and the rest follow along the top edge (AX coordinates).
+    static func buttonStripRect(forThumbnail f: CGRect, size: CGFloat, gap: CGFloat, count: Int) -> CGRect {
+        CGRect(x: f.minX - size / 2, y: f.minY - size / 2,
+               width: CGFloat(count) * size + CGFloat(max(count - 1, 0)) * gap, height: size)
+    }
+
+    /// Which button in the strip `point` is on (0-based), or nil for a gap or outside.
+    static func buttonIndex(at point: CGPoint, inStrip strip: CGRect, size: CGFloat, gap: CGFloat, count: Int) -> Int? {
+        guard strip.contains(point) else { return nil }
+        let x = point.x - strip.minX
+        let i = Int(x / (size + gap))
+        guard i >= 0, i < count, x - CGFloat(i) * (size + gap) <= size else { return nil }
+        return i
     }
 }
 
@@ -109,12 +155,25 @@ enum Shortcut {
     static let shift: UInt64   = 0x0002_0000
     static let control: UInt64 = 0x0004_0000
     static let option: UInt64  = 0x0008_0000
-    static let keycodeW: Int64 = 13   // kVK_ANSI_W (the key in the W position)
 
-    /// True for ⌘W with no other modifier (so ⌥⌘W and ⇧⌘W keep their usual meaning).
-    static func isCommandW(keycode: Int64, flags: UInt64) -> Bool {
-        guard keycode == keycodeW else { return false }
+    // Virtual key codes (the key in that position on a US layout).
+    static let keyW: Int64 = 13, keyM: Int64 = 46, keyF: Int64 = 3, keyH: Int64 = 4, keyQ: Int64 = 12
+
+    /// The Mission Control shortcut for this key press, if any. Modifiers must match
+    /// exactly, so ⇧⌘W, ⌥⌘W, ⌥⌘H and so on keep their usual meaning.
+    static func action(keycode: Int64, flags: UInt64) -> WindowAction? {
         let mods = flags & (command | shift | control | option)
-        return mods == command
+        switch (keycode, mods) {
+        case (keyW, command): return .close
+        case (keyM, command): return .minimize
+        case (keyF, command | control): return .fullScreen
+        case (keyF, command | option): return .zoom
+        case (keyH, command): return .hideApp
+        case (keyQ, command): return .quitApp
+        default: return nil
+        }
     }
+
+    /// For menus and the welcome window.
+    static let summary = "⌘W close · ⌘M minimize · ⌃⌘F full screen · ⌥⌘F zoom · ⌘H hide app · ⌘Q quit app"
 }

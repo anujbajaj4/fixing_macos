@@ -22,7 +22,8 @@ struct MenuContent: View {
 
     var body: some View {
         Text(state.headline)
-        Text("In Mission Control: point at a window, click ✕ or press ⌘W")
+        Text("In Mission Control, point at a window, then use its buttons or:")
+        Text(Shortcut.summary)
         if let update = state.updateVersion {
             Button("Update to \(update)…") { state.installUpdate() }
         }
@@ -30,8 +31,8 @@ struct MenuContent: View {
         if !state.trusted {
             Button("Set Up…") { AppDelegate.showWelcome() }
         }
-        Toggle("Show ✕ Button", isOn: Binding(get: { state.showCloseButton },
-                                              set: { state.setShowCloseButton($0) }))
+        Toggle("Show Window Buttons", isOn: Binding(get: { state.showCloseButton },
+                                                    set: { state.setShowCloseButton($0) }))
         Toggle("Start at Login", isOn: Binding(get: { state.startAtLogin },
                                                set: { state.setStartAtLogin($0) }))
         Divider()
@@ -176,7 +177,7 @@ final class AppState: ObservableObject {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let watcher = MissionControlWatcher()
     private let keyTap = KeyTap()
-    private let overlay = CloseButtonOverlay()
+    private let overlay = WindowButtonsOverlay()
     private var permissionTimer: Timer?
     private var started = false
 
@@ -187,8 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         state.onShowCloseButtonChange = { [weak self] on in
             guard let self else { return }
-            self.overlay.enabled = on
-            if on && self.watcher.isActive { self.overlay.start() }
+            self.overlay.showButtons = on
         }
 
         if state.trusted {
@@ -217,19 +217,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !started else { return }
         started = true
 
-        // ⌘W while Mission Control is open closes the window under the pointer.
-        keyTap.shouldHandle = { [weak self] in self?.watcher.isActive ?? false }
-        keyTap.onClose = { WindowCloser.closeWindowUnderMouse() }
-        // Clicks on the ✕ are caught by the tap: Mission Control would take them otherwise.
-        keyTap.isOnCloseButton = { [weak self] point in self?.overlay.isOnButton(point) ?? false }
-        keyTap.onCloseButtonClick = { [weak self] in self?.overlay.closeClicked() }
+        // Shortcuts act only while Mission Control is open and the pointer is on a window.
+        keyTap.isActive = { [weak self] in self?.watcher.isActive ?? false }
+        keyTap.isPointerOnThumbnail = { [weak self] in self?.overlay.isPointerOnThumbnail() ?? false }
+        keyTap.onShortcut = { action in WindowCloser.performUnderMouse(action) }
+        // Clicks on the buttons are caught by the tap: Mission Control would take them otherwise.
+        keyTap.buttonAt = { [weak self] point in self?.overlay.button(at: point) }
+        keyTap.onButton = { [weak self] action in self?.overlay.perform(action) }
         if !keyTap.start() {
             // The permission can take a moment to apply to a running app; try again shortly.
             started = false
             return
         }
 
-        // Show/hide the ✕ overlay as Mission Control opens and closes.
+        // Track thumbnails (and show the buttons) while Mission Control is open.
         watcher.onChange = { [weak self] active in
             AppState.shared.missionControlOpen = active
             if active { self?.overlay.start() } else { self?.overlay.stop() }
@@ -273,9 +274,12 @@ struct WelcomeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Close windows from Mission Control")
+            Text("Control windows from Mission Control")
                 .font(.title2.bold())
-            Text("Open Mission Control, point at a window, then click the ✕ on its corner or press ⌘W.")
+            Text("Open Mission Control and point at a window. Buttons appear on its corner: close, minimize, full screen and zoom (+ fills the screen without a separate space, like Option-clicking the green button).")
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Shortcuts: " + Shortcut.summary)
+                .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 14) {
@@ -316,7 +320,7 @@ struct WelcomeView: View {
                     Image(systemName: "rectangle.3.group").frame(width: 20)
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Try it").bold()
-                        Text("Press F3 or swipe up with three fingers, point at a window, press ⌘W.")
+                        Text("Press F3 or swipe up with three fingers, point at a window, click a button or press ⌘M.")
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }

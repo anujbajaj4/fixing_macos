@@ -1,18 +1,19 @@
-Close windows right from Mission Control: point at a window and click the ✕ on its corner, or press ⌘W.
+Control any window right from Mission Control: point at it, then use the buttons on its corner or a shortcut.
 
-## What's in 1.0.0
-- A ✕ button on the window under the pointer while Mission Control is open.
-- ⌘W closes the window under the pointer, only while Mission Control is open. Everywhere else ⌘W works as usual.
-- If two windows have the same title, MC Close does nothing rather than risk closing the wrong one.
-- A welcome window walks you through the Accessibility permission, plus Start at Login.
-- Checks GitHub for a new version once a month (it sends nothing about you).
+## What's new in 1.1.0
+- **Four buttons on the window you point at:** close, minimize, full screen, and zoom (+). Zoom does what Option-clicking the green button does: the window fills the screen in place, without a separate full-screen space. Zoom again to put it back.
+- **Shortcuts in Mission Control:** ⌘W close · ⌘M minimize · ⌃⌘F full screen · ⌥⌘F zoom · ⌘H hide the app · ⌘Q quit the app. They only act when the pointer is on a window, so everywhere else your keys work as usual.
+- **Safer:** pointing at a Dock icon in Mission Control no longer counts as pointing at a window.
+- Every button and shortcut is tested on a real Mac in Mission Control before each release.
 
-## Install
+## Install or update
 Paste this into Terminal (no password needed):
 
 ```
 curl -fsSL https://github.com/anujbajaj4/fixing_macos/releases/latest/download/install.sh | bash
 ```
+
+Already have MC Close? It offers the update itself within a month, or choose **Check for Updates** in its menu. After updating, macOS asks for Accessibility again: switch MC Close on once more.
 
 Or download **MCClose.dmg** below and drag MC Close to Applications. Because the app isn't notarized by Apple, macOS will say it "could not verify" it: click **Done**, then System Settings ▸ Privacy & Security ▸ **Open Anyway**. The Terminal command avoids this.
 

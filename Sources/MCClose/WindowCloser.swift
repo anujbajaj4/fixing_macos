@@ -122,8 +122,10 @@ enum WindowCloser {
     }
 
     /// Match a thumbnail to the app's real window by title.
-    /// If the match is ambiguous we return nil — better to do nothing than close the wrong window.
-    static func realWindow(for thumb: Thumbnail, trace: ((String) -> Void)? = nil) -> AXUIElement? {
+    /// Returns the window when exactly one fits. When several fit equally well, returns
+    /// them all as `ambiguous` (an app-level action can still act if they share one app).
+    static func realWindows(for thumb: Thumbnail, trace: ((String) -> Void)? = nil)
+        -> (window: AXUIElement?, ambiguous: [AXUIElement]) {
         var windows: [AXUIElement] = []
         var candidates: [WindowCandidate] = []
 
@@ -141,41 +143,126 @@ enum WindowCloser {
         }
         let outcome = WindowMatcher.pick(thumbnailTitle: thumb.title, from: candidates)
         trace?("thumbnail \(Log.title(thumb.title)) vs \(candidates.count) windows: \(outcome)")
-        if case .match(let i) = outcome { return windows[i] }
-        return nil
+        switch outcome {
+        case .match(let i): return (windows[i], [])
+        case .ambiguous(let list): return (nil, list.map { windows[$0] })
+        case .none: return (nil, [])
+        }
     }
 
-    /// Press the real window's red close button.
+    /// Do `action` to the real window behind `thumb`.
     @discardableResult
-    static func close(_ thumb: Thumbnail, via source: String) -> Bool {
+    static func perform(_ action: WindowAction, on thumb: Thumbnail, via source: String) -> Bool {
         var lines: [String] = []
         let trace: (String) -> Void = { lines.append($0) }
-        defer { Log.write("\(source): " + lines.joined(separator: "; ")) }
+        defer { Log.write("\(source) \(action.rawValue): " + lines.joined(separator: "; ")) }
 
-        guard let window = realWindow(for: thumb, trace: trace) else {
-            trace("no unique window found, nothing closed")
-            NSSound.beep()
-            return false
+        let found = realWindows(for: thumb, trace: trace)
+        let ok: Bool
+        if action.isAppAction {
+            // Hide/Quit only need the app: fine even if several of its windows share the title.
+            let pids = Set((found.window.map { [$0] } ?? found.ambiguous).compactMap(AX.pid))
+            guard pids.count == 1, let pid = pids.first,
+                  let app = NSRunningApplication(processIdentifier: pid) else {
+                trace(pids.isEmpty ? "no window found, nothing done" : "windows from \(pids.count) apps match, nothing done")
+                NSSound.beep()
+                return false
+            }
+            ok = action == .quitApp ? app.terminate() : app.hide()   // terminate lets the app ask to save
+            trace("\(action == .quitApp ? "asked the app to quit" : "hid the app"): \(ok ? "ok" : "refused")")
+        } else {
+            guard let window = found.window else {
+                trace("no unique window found, nothing done")
+                NSSound.beep()
+                return false
+            }
+            switch action {
+            case .close: ok = press(window, kAXCloseButtonAttribute, trace)
+            case .minimize: ok = set(window, kAXMinimizedAttribute, true, trace)
+                                 || press(window, kAXMinimizeButtonAttribute, trace)
+            case .fullScreen: ok = set(window, "AXFullScreen", true, trace)
+                                   || press(window, kAXFullScreenButtonAttribute, trace)
+                                   || press(window, kAXZoomButtonAttribute, trace)
+            case .zoom: ok = zoom(window, trace)
+            case .hideApp, .quitApp: ok = false   // handled above
+            }
         }
-        guard let closeButton = AX.element(window, kAXCloseButtonAttribute) else {
-            trace("window has no close button")
-            NSSound.beep()
-            return false
-        }
-        let result = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
-        trace(result == .success ? "pressed close button" : "close press failed (AX error \(result.rawValue))")
-        return result == .success
+        if !ok { NSSound.beep() }
+        return ok
     }
 
+    // MARK: Zoom (what Option-clicking the green button does)
+
+    /// Windows we zoomed, with their size before, so a second Zoom restores them.
+    private static var framesBeforeZoom: [(window: AXUIElement, frame: CGRect)] = []
+
+    /// Fill the usable part of the window's screen (not the menu bar or Dock), in place,
+    /// without a separate full-screen space. If it already fills it, put it back.
+    private static func zoom(_ window: AXUIElement, _ trace: (String) -> Void) -> Bool {
+        guard let frame = AX.frame(window) else { trace("window has no frame"); return false }
+        let visible = visibleFrameAX(around: CGPoint(x: frame.midX, y: frame.midY))
+        let saved = framesBeforeZoom.firstIndex { CFEqual($0.window, window) }
+
+        if Geometry.isFilling(frame, visible), let i = saved {
+            let old = framesBeforeZoom.remove(at: i).frame
+            trace("already zoomed: restoring")
+            return setFrame(window, old, trace)
+        }
+        if let i = saved { framesBeforeZoom.remove(at: i) }
+        framesBeforeZoom.append((window, frame))
+        if framesBeforeZoom.count > 50 { framesBeforeZoom.removeFirst() }
+        return setFrame(window, visible, trace)
+    }
+
+    /// The visible frame (minus menu bar and Dock) of the screen containing `point`, in AX coordinates.
+    private static func visibleFrameAX(around point: CGPoint) -> CGRect {
+        let mainHeight = NSScreen.screens.first?.frame.height ?? 0
+        let screen = NSScreen.screens.first {
+            Geometry.axRect(fromAppKit: $0.frame, mainScreenHeight: mainHeight).contains(point)
+        } ?? NSScreen.main ?? NSScreen.screens.first
+        return Geometry.axRect(fromAppKit: screen?.visibleFrame ?? .zero, mainScreenHeight: mainHeight)
+    }
+
+    private static func setFrame(_ window: AXUIElement, _ rect: CGRect, _ trace: (String) -> Void) -> Bool {
+        var origin = rect.origin
+        var size = rect.size
+        guard let pos = AXValueCreate(.cgPoint, &origin), let sz = AXValueCreate(.cgSize, &size) else { return false }
+        // Position, size, position again: apps clamp the size to what fits where the window is.
+        let r1 = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, pos)
+        let r2 = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sz)
+        _ = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, pos)
+        let ok = r1 == .success && r2 == .success
+        trace(ok ? "set frame to \(Int(rect.width))x\(Int(rect.height)) at \(Int(rect.minX)),\(Int(rect.minY))"
+                 : "setting frame failed (AX errors \(r1.rawValue), \(r2.rawValue))")
+        return ok
+    }
+
+    private static func press(_ window: AXUIElement, _ buttonAttribute: String, _ trace: (String) -> Void) -> Bool {
+        guard let button = AX.element(window, buttonAttribute) else {
+            trace("window has no \(buttonAttribute)")
+            return false
+        }
+        let r = AXUIElementPerformAction(button, kAXPressAction as CFString)
+        trace(r == .success ? "pressed \(buttonAttribute)" : "pressing \(buttonAttribute) failed (AX error \(r.rawValue))")
+        return r == .success
+    }
+
+    private static func set(_ window: AXUIElement, _ attribute: String, _ value: Bool, _ trace: (String) -> Void) -> Bool {
+        let r = AXUIElementSetAttributeValue(window, attribute as CFString, (value ? kCFBooleanTrue! : kCFBooleanFalse!))
+        trace(r == .success ? "set \(attribute)=\(value)" : "setting \(attribute) failed (AX error \(r.rawValue))")
+        return r == .success
+    }
+
+    /// Keyboard shortcuts: act on the thumbnail under the pointer, read fresh.
     @discardableResult
-    static func closeWindowUnderMouse() -> Bool {
+    static func performUnderMouse(_ action: WindowAction) -> Bool {
         let thumbs = missionControlThumbnails()
         let mouse = mouseLocation()
         guard let thumb = thumbnail(at: mouse, in: thumbs) else {
-            Log.write("⌘W: pointer (\(Int(mouse.x)), \(Int(mouse.y))) is not on any of the \(thumbs.count) window thumbnails")
+            Log.write("key \(action.rawValue): pointer (\(Int(mouse.x)), \(Int(mouse.y))) is not on any of the \(thumbs.count) window thumbnails")
             NSSound.beep()
             return false
         }
-        return close(thumb, via: "⌘W")
+        return perform(action, on: thumb, via: "key")
     }
 }

@@ -2,12 +2,11 @@ import Cocoa
 import ApplicationServices
 
 // End-to-end test on a real Mac with MC Close running and Accessibility granted
-// (GitHub's macOS runners grant it). It drives Mission Control for real:
-//   1. opens TextEdit windows e2e-alpha.txt, e2e-beta.txt, e2e-gamma.txt
-//   2. opens Mission Control, checks MC Close noticed
-//   3. hovers alpha's thumbnail, checks the ✕ appears, presses ⌘W, checks alpha closed
-//   4. hovers beta's thumbnail, clicks the ✕, checks beta closed
-//   5. leaves Mission Control, checks the ✕ is gone and ⌘W passes through to TextEdit (gamma closes)
+// (GitHub's macOS runners grant it). It opens TextEdit windows and Calculator, opens
+// Mission Control for real, and checks every button and shortcut on the window under
+// the pointer: close (⌘W and button), minimize (⌘M and button), zoom (button, then ⌥⌘F
+// to restore), quit app (⌘Q), full screen (button). Then it leaves Mission Control and
+// checks the buttons are gone and ⌘W reaches TextEdit as usual.
 // Build: swiftc Tests/e2e.swift -o build/e2e ; run: build/e2e <dir for screenshots>
 
 let shots = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : NSTemporaryDirectory()
@@ -99,31 +98,69 @@ func thumbnail(_ name: String) -> CGRect? {
     dockElements().first { $0.role == "AXButton" && $0.title.contains(name) && $0.frame.width > 40 }?.frame
 }
 
+// MARK: - Helpers for this test
+
+let buttonSize: CGFloat = 22, buttonGap: CGFloat = 6   // as in WindowButtonsOverlay
+enum Button: Int { case close = 0, minimize, fullScreen, zoom }
+
+func teWindow(_ title: String) -> AXUIElement? {
+    guard let te = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.TextEdit").first else { return nil }
+    let app = AXUIElementCreateApplication(te.processIdentifier)
+    return ((attr(app, kAXWindowsAttribute) as [AXUIElement]?) ?? []).first { (attr($0, kAXTitleAttribute) as String?) == title }
+}
+func boolAttr(_ el: AXUIElement?, _ a: String) -> Bool {
+    guard let el, let n: NSNumber = attr(el, a) else { return false }
+    return n.boolValue
+}
+/// Point at a window's thumbnail; returns its frame.
+@discardableResult
+func hover(_ name: String) -> CGRect? {
+    wait(0.8)   // Mission Control re-lays out after each action
+    guard let f = thumbnail(name) else { return nil }
+    move(to: center(f)); wait(0.6)
+    return f
+}
+/// Click one of the buttons on the hovered thumbnail.
+func clickButton(_ b: Button) -> Bool {
+    guard let strip = overlayFrames().first else { return false }
+    let p = CGPoint(x: strip.minX + buttonSize / 2 + CGFloat(b.rawValue) * (buttonSize + buttonGap), y: strip.midY)
+    // Approach from the thumbnail side so the overlay keeps targeting the same window.
+    move(to: CGPoint(x: p.x + 3, y: p.y + 3)); wait(0.2)
+    click(p)
+    return true
+}
+func visibleScreenAX() -> CGRect {
+    let h = NSScreen.screens.first?.frame.height ?? 0
+    let v = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+    return CGRect(x: v.minX, y: h - v.maxY, width: v.width, height: v.height)
+}
+
 // MARK: - Setup
 
 ok(AXIsProcessTrusted(), "this test process has Accessibility (needed to drive the mouse and keyboard)")
 ok(!NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.anujbajaj4.MCClose").isEmpty,
    "MC Close is running")
 
+let names = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "theta"]
 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("mcclose-e2e")
 try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-for n in ["alpha", "beta", "gamma"] {
-    let f = dir.appendingPathComponent("e2e-\(n).txt")
-    try? "MC Close end-to-end test: \(n)\n".write(to: f, atomically: true, encoding: .utf8)
+for n in names {
+    try? "MC Close end-to-end test: \(n)\n".write(to: dir.appendingPathComponent("e2e-\(n).txt"), atomically: true, encoding: .utf8)
 }
-sh("open -a TextEdit '\(dir.path)/e2e-alpha.txt' '\(dir.path)/e2e-beta.txt' '\(dir.path)/e2e-gamma.txt'")
-wait(4)
-// Spread the windows out so their thumbnails don't overlap.
-sh("""
-osascript -e 'tell application "TextEdit"' \
-  -e 'set bounds of window "e2e-alpha.txt" to {40, 80, 640, 480}' \
-  -e 'set bounds of window "e2e-beta.txt" to {700, 80, 1300, 480}' \
-  -e 'set bounds of window "e2e-gamma.txt" to {300, 500, 900, 880}' -e 'end tell' </dev/null 2>/dev/null
-""")
+sh("open -a TextEdit " + names.map { "'\(dir.path)/e2e-\($0).txt'" }.joined(separator: " "))
+sh("open -a Calculator")
+wait(5)
+// Different sizes and places, so the thumbnails are easy to tell apart.
+let bounds = ["{20, 60, 420, 360}", "{440, 60, 840, 360}", "{860, 60, 1260, 360}", "{20, 380, 420, 680}",
+              "{440, 380, 840, 680}", "{100, 120, 600, 520}", "{860, 380, 1260, 680}"]
+sh("osascript -e 'tell application \"TextEdit\"' " +
+   zip(names, bounds).map { "-e 'set bounds of window \"e2e-\($0).txt\" to \($1)'" }.joined(separator: " ") +
+   " -e 'end tell' </dev/null 2>/dev/null")
 wait(1)
 let before = textEditWindowTitles()
 print("TextEdit windows: \(before)")
-ok(before.contains("e2e-alpha.txt") && before.contains("e2e-beta.txt"), "TextEdit test windows are open")
+ok(names.allSatisfy { before.contains("e2e-\($0).txt") }, "TextEdit test windows are open")
+let zetaBefore = teWindow("e2e-zeta.txt").flatMap(frame)
 shot("1-windows")
 
 // MARK: - Mission Control
@@ -132,72 +169,115 @@ let logBefore = logText().count
 sh("open -a 'Mission Control'")
 wait(2.5)
 shot("2-mission-control")
-let newLog = String(logText().dropFirst(logBefore))
-ok(newLog.contains("Dock says AXExposeShowAllWindows"), "MC Close noticed Mission Control opening")
+ok(String(logText().dropFirst(logBefore)).contains("Dock says AXExposeShowAllWindows"), "MC Close noticed Mission Control opening")
 
 let elements = dockElements()
 print("Dock elements with a title while Mission Control is open (\(elements.count)):")
-for e in elements.prefix(60) {
+for e in elements.prefix(60) where e.role != "AXDockItem" {
     print("  \(e.role)\(e.subrole.isEmpty ? "" : "/" + e.subrole)  \"\(e.title)\"  \(Int(e.frame.minX)),\(Int(e.frame.minY)) \(Int(e.frame.width))x\(Int(e.frame.height))")
 }
 
-// MARK: ⌘W on alpha
-if let alpha = thumbnail("e2e-alpha") {
-    move(to: center(alpha)); wait(0.6)
+// MARK: Buttons appear, in the right place
+if let alpha = hover("e2e-alpha") {
     let ov = overlayFrames()
     shot("3-hover-alpha", inline: true)
-    ok(!ov.isEmpty, "✕ button appears when hovering a thumbnail")
+    ok(!ov.isEmpty, "buttons appear when hovering a thumbnail")
     if let b = ov.first {
-        ok(abs(b.midX - alpha.minX) < 3 && abs(b.midY - alpha.minY) < 3,
-           "✕ sits on the thumbnail's top-left corner (✕ \(b), thumbnail \(alpha))")
+        ok(abs(b.width - (4 * buttonSize + 3 * buttonGap)) < 2, "four buttons: close, minimize, full screen, zoom (strip \(b))")
+        ok(abs(b.minX + buttonSize / 2 - alpha.minX) < 3 && abs(b.midY - alpha.minY) < 3,
+           "close button sits on the thumbnail's top-left corner")
     }
-    key(13, command: true)   // ⌘W
-    wait(1.5)
-    shot("4-after-cmd-w")
-    ok(!textEditWindowTitles().contains("e2e-alpha.txt"), "⌘W in Mission Control closed the hovered window")
-    ok(textEditWindowTitles().contains("e2e-beta.txt"), "…and only that window")
-} else {
-    ok(false, "found alpha's thumbnail in Mission Control")
-}
-
-// MARK: ✕ click on beta
-wait(1)   // Mission Control re-lays out after a close
-if let beta = thumbnail("e2e-beta") {
-    move(to: center(beta)); wait(0.6)
-    if let b = overlayFrames().first {
-        // Approach the ✕ from the thumbnail so the overlay keeps targeting beta.
-        move(to: CGPoint(x: b.midX + 6, y: b.midY + 6)); wait(0.2)
-        click(center(b))
-        wait(1.5)
-        shot("5-after-x-click", inline: true)
-        ok(!textEditWindowTitles().contains("e2e-beta.txt"), "clicking ✕ closed the hovered window")
-    } else {
-        ok(false, "✕ button appears when hovering beta")
-    }
-} else {
-    ok(false, "found beta's thumbnail in Mission Control")
-}
-
-// MARK: Dock icons are not targets
-if let dockIcon = dockElements().first(where: { $0.role == "AXDockItem" && $0.title == "TextEdit" }) {
-    move(to: center(dockIcon.frame)); wait(0.6)
-    ok(overlayFrames().isEmpty, "no ✕ on a Dock icon in Mission Control")
-}
-
-// MARK: leaving Mission Control
-key(53)   // Escape
-wait(2)
-shot("6-after-exit")
-ok(logText().contains("Dock says AXExposeExit"), "MC Close noticed Mission Control closing")
-ok(overlayFrames().isEmpty, "✕ button is gone after leaving Mission Control")
-
-// ⌘W outside Mission Control must reach the app as usual.
-sh("osascript -e 'tell application \"TextEdit\" to activate' </dev/null")
-wait(1)
-if textEditWindowTitles().contains("e2e-gamma.txt") {
+    // MARK: ⌘W
     key(13, command: true)
     wait(1.5)
-    ok(!textEditWindowTitles().contains("e2e-gamma.txt"), "⌘W outside Mission Control still works in the app (TextEdit closed its window)")
+    ok(teWindow("e2e-alpha.txt") == nil, "⌘W closed the hovered window")
+    ok(teWindow("e2e-beta.txt") != nil, "…and only that window")
+} else { ok(false, "found alpha's thumbnail") }
+
+// MARK: Close button
+if hover("e2e-beta") != nil, clickButton(.close) {
+    wait(1.5)
+    ok(teWindow("e2e-beta.txt") == nil, "close button closed the hovered window")
+} else { ok(false, "close button shown on beta") }
+
+// MARK: Minimize button
+if hover("e2e-delta") != nil, clickButton(.minimize) {
+    wait(1.5)
+    ok(boolAttr(teWindow("e2e-delta.txt"), kAXMinimizedAttribute), "minimize button minimized the hovered window")
+} else { ok(false, "buttons shown on delta") }
+
+// MARK: ⌘M
+if hover("e2e-epsilon") != nil {
+    key(46, command: true)
+    wait(1.5)
+    ok(boolAttr(teWindow("e2e-epsilon.txt"), kAXMinimizedAttribute), "⌘M minimized the hovered window")
+} else { ok(false, "found epsilon's thumbnail") }
+
+// MARK: Zoom button, then ⌥⌘F restores
+if hover("e2e-zeta") != nil, clickButton(.zoom) {
+    wait(1.5)
+    let z = teWindow("e2e-zeta.txt").flatMap(frame) ?? .zero
+    let v = visibleScreenAX()
+    shot("5-after-zoom", inline: true)
+    ok(abs(z.width - v.width) < 12 && abs(z.height - v.height) < 12,
+       "zoom button made the window fill the screen (window \(z), screen \(v))")
+    ok(!boolAttr(teWindow("e2e-zeta.txt"), "AXFullScreen"), "…without going full screen")
+    if hover("e2e-zeta") != nil {
+        let down = CGEvent(keyboardEventSource: src, virtualKey: 3, keyDown: true)
+        let up = CGEvent(keyboardEventSource: src, virtualKey: 3, keyDown: false)
+        down?.flags = [.maskCommand, .maskAlternate]; up?.flags = [.maskCommand, .maskAlternate]
+        down?.post(tap: .cghidEventTap); wait(0.05); up?.post(tap: .cghidEventTap)
+        wait(1.5)
+        let r = teWindow("e2e-zeta.txt").flatMap(frame) ?? .zero
+        if let zb = zetaBefore {
+            ok(abs(r.width - zb.width) < 12 && abs(r.height - zb.height) < 12,
+               "⌥⌘F on a zoomed window put it back to its size (now \(r), before \(zb))")
+        }
+    } else { ok(false, "found zeta's thumbnail after zoom") }
+} else { ok(false, "buttons shown on zeta") }
+
+// MARK: ⌘Q quits the app under the pointer
+if hover("Calculator") != nil {
+    key(12, command: true)
+    wait(2.5)
+    ok(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.calculator").isEmpty,
+       "⌘Q quit the app whose window was under the pointer (Calculator)")
+    ok(teWindow("e2e-gamma.txt") != nil, "…and left other apps alone")
+} else { ok(false, "found Calculator's thumbnail") }
+
+// MARK: Dock icons are not targets
+wait(0.8)
+if let dockIcon = dockElements().first(where: { $0.role == "AXDockItem" && $0.title == "TextEdit" }) {
+    move(to: center(dockIcon.frame)); wait(0.6)
+    ok(overlayFrames().isEmpty, "no buttons on a Dock icon in Mission Control")
+}
+
+// MARK: Full-screen button (last: it leaves Mission Control)
+if hover("e2e-theta") != nil, clickButton(.fullScreen) {
+    wait(3.5)
+    shot("6-after-full-screen")
+    ok(boolAttr(teWindow("e2e-theta.txt"), "AXFullScreen"), "full-screen button put the hovered window in full screen")
+} else { ok(false, "buttons shown on theta") }
+
+// MARK: leaving Mission Control
+if !logText().dropFirst(logBefore).contains("Dock says AXExposeExit") {
+    key(53)   // Escape
+    wait(2)
+}
+ok(logText().dropFirst(logBefore).contains("Dock says AXExposeExit"), "MC Close noticed Mission Control closing")
+ok(overlayFrames().isEmpty, "buttons are gone after leaving Mission Control")
+
+// Back out of full screen, then check ⌘W outside Mission Control reaches the app.
+if let theta = teWindow("e2e-theta.txt") {
+    _ = AXUIElementSetAttributeValue(theta, "AXFullScreen" as CFString, kCFBooleanFalse)
+    wait(3)
+}
+sh("osascript -e 'tell application \"TextEdit\"' -e 'activate' -e 'set index of window \"e2e-gamma.txt\" to 1' -e 'end tell' </dev/null 2>/dev/null")
+wait(1.5)
+if teWindow("e2e-gamma.txt") != nil {
+    key(13, command: true)
+    wait(1.5)
+    ok(teWindow("e2e-gamma.txt") == nil, "⌘W outside Mission Control still works in the app (TextEdit closed its window)")
 } else {
     ok(false, "gamma window still open before pass-through test")
 }

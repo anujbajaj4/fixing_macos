@@ -1,20 +1,23 @@
 import Cocoa
 
 /// Watches input system-wide, but only acts while Mission Control is open:
-/// - ⌘W closes the window under the pointer.
-/// - A click on the ✕ closes that window. Mission Control takes clicks for itself even
-///   when our ✕ is drawn on top (seen on macOS 15), so the click is caught here, before
-///   Mission Control sees it.
-/// Everywhere else every key and click passes through untouched.
+/// - ⌘W / ⌘M / ⌃⌘F / ⌥⌘F / ⌘H / ⌘Q act on the window (or app) under the pointer, when the
+///   pointer is on a window thumbnail. Otherwise the key passes through as usual.
+/// - A click on one of the window buttons. Mission Control takes clicks for itself even
+///   when our buttons are drawn on top (seen on macOS 15), so the click is caught here,
+///   before Mission Control sees it.
+/// Outside Mission Control every key and click passes through untouched.
 final class KeyTap {
-    /// Return true when we should intercept (i.e. Mission Control is open).
-    var shouldHandle: () -> Bool = { false }
-    /// Called on the main thread to close the window under the pointer (⌘W).
-    var onClose: () -> Void = {}
-    /// Is this point (AX / event coordinates) on the visible ✕?
-    var isOnCloseButton: (CGPoint) -> Bool = { _ in false }
-    /// Called on the main thread when the ✕ is clicked.
-    var onCloseButtonClick: () -> Void = {}
+    /// True while Mission Control is open.
+    var isActive: () -> Bool = { false }
+    /// Is the pointer on a window thumbnail right now?
+    var isPointerOnThumbnail: () -> Bool = { false }
+    /// Called on the main thread for a shortcut.
+    var onShortcut: (WindowAction) -> Void = { _ in }
+    /// The window button at this point (AX / event coordinates), if any.
+    var buttonAt: (CGPoint) -> WindowAction? = { _ in nil }
+    /// Called on the main thread when a window button is clicked.
+    var onButton: (WindowAction) -> Void = { _ in }
 
     fileprivate var tap: CFMachPort?
     fileprivate var swallowMouseUp = false
@@ -40,20 +43,21 @@ final class KeyTap {
                 Log.write("event tap was disabled by macOS (\(type.rawValue)); re-enabled")
 
             case .keyDown:
-                if Shortcut.isCommandW(keycode: event.getIntegerValueField(.keyboardEventKeycode),
-                                       flags: event.flags.rawValue),
-                   me.shouldHandle() {
-                    // Held-down ⌘W repeats: swallow the repeats, act once.
+                if me.isActive(),
+                   let action = Shortcut.action(keycode: event.getIntegerValueField(.keyboardEventKeycode),
+                                                flags: event.flags.rawValue),
+                   me.isPointerOnThumbnail() {
+                    // Held-down keys repeat: swallow the repeats, act once.
                     if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-                        DispatchQueue.main.async { me.onClose() }   // AX work off the callback
+                        DispatchQueue.main.async { me.onShortcut(action) }   // AX work off the callback
                     }
                     return nil
                 }
 
             case .leftMouseDown:
-                if me.shouldHandle(), me.isOnCloseButton(event.location) {
+                if me.isActive(), let action = me.buttonAt(event.location) {
                     me.swallowMouseUp = true
-                    DispatchQueue.main.async { me.onCloseButtonClick() }
+                    DispatchQueue.main.async { me.onButton(action) }
                     return nil
                 }
 
