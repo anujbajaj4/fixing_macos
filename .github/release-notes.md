@@ -10,7 +10,7 @@ Control any window right from Mission Control: point at it, then use the buttons
 Paste this into Terminal (no password needed):
 
 ```
-curl -fsSL https://github.com/anujbajaj4/fixing_macos/releases/latest/download/install.sh | bash
+curl -fsSL https://anujbajaj4.github.io/fixing_macos/install.sh | bash
 ```
 
 Already have MC Close? It offers the update itself within a month, or choose **Check for Updates** in its menu. After updating, macOS asks for Accessibility again: switch MC Close on once more.

@@ -35,8 +35,8 @@ fake osascript 'true'
 fake tccutil   'true'
 
 run() {   # run the installer the way users do: piped into bash
-    PATH="$bin:$PATH" MCCLOSE_DMG_URL="file://$work/MCClose.dmg" \
-        MCCLOSE_APPS_DIR="$work/Applications" MCCLOSE_NO_OPEN="${NO_OPEN:-1}" \
+    PATH="$bin:$PATH" MCCLOSE_DMG_URL="${DMG:-file://$work/MCClose.dmg}" \
+        MCCLOSE_MIRROR_URL="${MIRROR:-file://$work/missing-mirror.dmg}" MCCLOSE_APPS_DIR="$work/Applications" MCCLOSE_NO_OPEN="${NO_OPEN:-1}" \
         bash < "$root/install.sh" > "$work/out.txt" 2>&1
 }
 
@@ -59,9 +59,14 @@ NO_OPEN=0 run && grep -q "^open .*MCClose.app" "$log" && grep -q "Open Accessibi
 if FAKE_OS=12.7 run; then bad "old macOS should be refused"; else grep -q "needs macOS 13" "$work/out.txt" && ok "refuses macOS 12 with a clear message" || bad "macOS 12 message"; fi
 if FAKE_UNAME=Linux run; then bad "non-Mac should be refused"; else grep -q "isn't a Mac" "$work/out.txt" && ok "refuses non-Mac" || bad "non-Mac message"; fi
 
-if PATH="$bin:$PATH" MCCLOSE_DMG_URL="file://$work/missing.dmg" MCCLOSE_APPS_DIR="$work/A2" MCCLOSE_NO_OPEN=1 \
-    bash < "$root/install.sh" > "$work/out.txt" 2>&1; then bad "missing download should fail"
-else grep -q "couldn't download" "$work/out.txt" && ok "download failure is explained" || bad "download failure message"; fi
+if DMG="file://$work/missing.dmg" run; then bad "missing download should fail"
+else grep -q "couldn't download MC Close from GitHub or the mirror" "$work/out.txt" && ok "download failure (both hosts) is explained" || bad "download failure message"; fi
+
+rm -rf "$work/Applications"
+if DMG="file://$work/missing.dmg" MIRROR="file://$work/MCClose.dmg" run \
+    && [ -x "$work/Applications/MCClose.app/Contents/MacOS/MCClose" ] && grep -q "Trying the mirror" "$work/out.txt"; then
+    ok "falls back to the mirror when GitHub's download server fails"
+else bad "mirror fallback"; cat "$work/out.txt"; fi
 
 # A download cut off halfway must run nothing (all work is inside main, called last).
 head -c 1500 "$root/install.sh" > "$work/partial.sh"

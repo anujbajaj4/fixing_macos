@@ -23,10 +23,13 @@ macOS 13 (Ventura) or later, on both Apple silicon and Intel Macs.
 Paste this into Terminal:
 
 ```bash
-curl -fsSL https://github.com/anujbajaj4/fixing_macos/releases/latest/download/install.sh | bash
+curl -fsSL https://anujbajaj4.github.io/fixing_macos/install.sh | bash
 ```
 
 It downloads the app from the latest release, puts it in Applications and opens it. No password needed.
+If your network can't reach GitHub's download server, it uses the mirror on GitHub Pages instead.
+The same installer is also attached to each release:
+`curl -fsSL https://github.com/anujbajaj4/fixing_macos/releases/latest/download/install.sh | bash`
 Then, in the window that opens, click **Open Accessibility Settings** and switch **MC Close** on.
 
 Prefer to download? Get **MCClose.dmg** from the [latest release](https://github.com/anujbajaj4/fixing_macos/releases/latest)
@@ -96,7 +99,8 @@ The installer tests run anywhere, Linux included: `bash Tests/install_test.sh`.
 
 1. Bump `VERSION` and update `.github/release-notes.md`.
 2. Run the **Release** workflow from the Actions tab. It tests, builds, and publishes `v<VERSION>` with
-   `MCClose.dmg` and `install.sh` attached. Installed copies will offer the update within a month,
+   `MCClose.dmg` and `install.sh` attached, then refreshes the download page and mirror on GitHub Pages
+   (one-time setup: Settings ▸ Pages ▸ Source: **GitHub Actions**). Installed copies will offer the update within a month,
    or straight away from **Check for Updates**.
 
 ## Uninstall

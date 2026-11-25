@@ -40,3 +40,12 @@ jobs:
             --title "MC Close ${{ steps.v.outputs.version }}" \
             --target "$GITHUB_SHA" \
             --notes-file .github/release-notes.md
+
+  # Refresh the GitHub Pages mirror with the new .dmg.
+  pages:
+    needs: release
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

@@ -54,7 +54,9 @@ final class AppState: ObservableObject {
     static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     static let bundleID = Bundle.main.bundleIdentifier ?? "io.github.anujbajaj4.MCClose"
     static let repo = "anujbajaj4/fixing_macos"
-    static let installCommand = "curl -fsSL https://github.com/\(repo)/releases/latest/download/install.sh | /bin/bash"
+    /// The installer from the Pages mirror, or from the release if the mirror isn't reachable.
+    static let installCommand = "(curl -fsSL --connect-timeout 10 https://anujbajaj4.github.io/fixing_macos/install.sh"
+        + " || curl -fsSL --connect-timeout 10 https://github.com/\(repo)/releases/latest/download/install.sh) | /bin/bash"
 
     @Published var trusted = AX.isTrusted(prompt: false)
     @Published var missionControlOpen = false

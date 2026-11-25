@@ -1,14 +1,16 @@
 #!/bin/bash
 # Installs (or updates) MC Close, a menu-bar app that closes windows from Mission Control.
 #
-#   curl -fsSL https://github.com/anujbajaj4/fixing_macos/releases/latest/download/install.sh | bash
+#   curl -fsSL https://anujbajaj4.github.io/fixing_macos/install.sh | bash
 #
-# What it does: downloads MCClose.dmg from the latest GitHub release, copies
+# What it does: downloads MCClose.dmg from the latest GitHub release (or, if
+# GitHub's download server can't be reached, from the GitHub Pages mirror), copies
 # MCClose.app into /Applications (or ~/Applications if that isn't writable),
 # and opens it. No sudo. Read it first:
 #   https://github.com/anujbajaj4/fixing_macos (install.sh)
 #
-# Test overrides: MCCLOSE_DMG_URL (file:// works), MCCLOSE_APPS_DIR, MCCLOSE_NO_OPEN=1
+# Test overrides: MCCLOSE_DMG_URL and MCCLOSE_MIRROR_URL (file:// works),
+#                 MCCLOSE_APPS_DIR, MCCLOSE_NO_OPEN=1
 
 say()  { printf '%s\n' "$*"; }
 fail() { printf 'MC Close install failed: %s\n' "$*" >&2; exit 1; }
@@ -35,6 +37,7 @@ quit_running_app() {
 main() {
     set -euo pipefail
     local url="${MCCLOSE_DMG_URL:-https://github.com/anujbajaj4/fixing_macos/releases/latest/download/MCClose.dmg}"
+    local mirror="${MCCLOSE_MIRROR_URL:-https://anujbajaj4.github.io/fixing_macos/MCClose.dmg}"
     local bundle_id="io.github.anujbajaj4.MCClose"
 
     [ "$(uname -s)" = Darwin ] || fail "this computer isn't a Mac."
@@ -49,8 +52,13 @@ main() {
     mkdir -p "${mnt}"
 
     say "Downloading MC Close…"
-    curl -fL --progress-bar --retry 2 -o "${tmp}/MCClose.dmg" "${url}" ||
-        fail "couldn't download ${url}. Check your internet connection and try again."
+    # Some networks can't reach GitHub's download server (release-assets.githubusercontent.com)
+    # and just hang, so give it 10 seconds to connect, then use the mirror.
+    if ! curl -fL --progress-bar --connect-timeout 10 --retry 1 -o "${tmp}/MCClose.dmg" "${url}"; then
+        say "GitHub's download server didn't answer. Trying the mirror…"
+        curl -fL --progress-bar --connect-timeout 15 --retry 1 -o "${tmp}/MCClose.dmg" "${mirror}" ||
+            fail "couldn't download MC Close from GitHub or the mirror. Check your internet connection; if GitHub is blocked on your network, setting DNS to 1.1.1.1 in System Settings ▸ Wi-Fi ▸ Details ▸ DNS often helps."
+    fi
     hdiutil attach -nobrowse -readonly -noautoopen -quiet -mountpoint "${mnt}" "${tmp}/MCClose.dmg" </dev/null ||
         fail "couldn't open the downloaded disk image."
     [ -d "${mnt}/MCClose.app" ] || fail "the disk image doesn't contain MCClose.app."
