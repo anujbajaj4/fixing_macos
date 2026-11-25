@@ -193,24 +193,42 @@ enum ThumbnailSanity {
     }
 }
 
-/// Where the buttons sit on each thumbnail: like a window's own controls, inside the
-/// top-left corner of its title bar, on a small pill that hides the thumbnail's own
-/// miniature controls. Narrow thumbnails get proportionally smaller buttons.
-/// All in AX coordinates (top-left origin).
+/// Where a window's own controls are, measured on the real window (from its AX close and
+/// minimize buttons), so ours can be drawn exactly over their miniature in the thumbnail.
+struct NativeControls: Equatable {
+    var closeCenter: CGPoint   // from the window's top-left corner
+    var diameter: CGFloat      // of one control
+    var spacing: CGFloat       // centre to centre
+    var windowSize: CGSize
+}
+
+/// Where the buttons sit on each thumbnail. With the window's own controls measured, they
+/// sit exactly on top of the thumbnail's miniature controls, at the same scale, with Zoom
+/// as a fourth control after green. Without a measurement, a row like macOS's own goes
+/// inside the top-left corner. All in AX coordinates (top-left origin).
 enum ButtonLayout {
-    static let diameter: CGFloat = 13     // macOS window controls are 12–14 pt
-    static let gap: CGFloat = 7           // space between circles
-    static let inset: CGFloat = 8         // from the thumbnail's left and top edges
-    static let padding: CGFloat = 4       // pill around the circles
+    static let diameter: CGFloat = 13     // default, when the window's controls weren't measured
+    static let gap: CGFloat = 7
+    static let inset: CGFloat = 8
+    static let minDiameter: CGFloat = 9   // smaller than this is too fiddly to click
     static let slop: CGFloat = 3          // extra hit area around each circle
 
-    /// 1 normally; less on thumbnails too narrow for a full-size row.
+    /// 1 normally; less on thumbnails too narrow for a full-size default row.
     static func scale(forThumbnail f: CGRect, count: Int) -> CGFloat {
         let needed = inset * 2 + CGFloat(count) * diameter + CGFloat(max(count - 1, 0)) * gap
         return min(1, max(0.5, f.width / needed))
     }
 
-    static func rects(forThumbnail f: CGRect, count: Int) -> [CGRect] {
+    static func rects(forThumbnail f: CGRect, count: Int, native: NativeControls? = nil) -> [CGRect] {
+        if let n = native, n.windowSize.width > 0, n.diameter > 0 {
+            let s = f.width / n.windowSize.width                     // Mission Control keeps the aspect ratio
+            let d = max(n.diameter * s, minDiameter)
+            let spacing = max(n.spacing * s, d + 1.5)
+            let first = CGPoint(x: f.minX + n.closeCenter.x * s, y: f.minY + n.closeCenter.y * s)
+            return (0..<count).map { i in
+                CGRect(x: first.x + CGFloat(i) * spacing - d / 2, y: first.y - d / 2, width: d, height: d)
+            }
+        }
         let k = scale(forThumbnail: f, count: count)
         return (0..<count).map { i in
             CGRect(x: f.minX + inset * k + CGFloat(i) * (diameter + gap) * k, y: f.minY + inset * k,
@@ -218,28 +236,56 @@ enum ButtonLayout {
         }
     }
 
-    /// The pill behind the buttons.
-    static func pillRect(forThumbnail f: CGRect, count: Int) -> CGRect {
-        let r = rects(forThumbnail: f, count: count)
-        guard let first = r.first, let last = r.last else { return .zero }
-        let pad = padding * scale(forThumbnail: f, count: count)
-        return first.union(last).insetBy(dx: -pad, dy: -pad)
-    }
-
     /// The whole row, with slop: hovering it shows the symbols, like on a real window.
-    static func groupRect(forThumbnail f: CGRect, count: Int) -> CGRect {
-        pillRect(forThumbnail: f, count: count).insetBy(dx: -slop, dy: -slop)
+    static func groupRect(_ row: [CGRect]) -> CGRect {
+        guard let first = row.first, let last = row.last else { return .zero }
+        return first.union(last).insetBy(dx: -slop - 2, dy: -slop - 2)
     }
 
-    /// Which button of which thumbnail is at `p`, if any.
-    static func hit(_ p: CGPoint, thumbnails: [CGRect], count: Int) -> (thumbnail: Int, button: Int)? {
-        for (t, f) in thumbnails.enumerated() {
-            for (b, r) in rects(forThumbnail: f, count: count).enumerated()
-            where r.insetBy(dx: -slop, dy: -slop).contains(p) {
+    /// Which button of which row is at `p`, if any.
+    static func hit(_ p: CGPoint, rows: [[CGRect]]) -> (thumbnail: Int, button: Int)? {
+        for (t, row) in rows.enumerated() {
+            for (b, r) in row.enumerated() where r.insetBy(dx: -slop, dy: -slop).contains(p) {
                 return (t, b)
             }
         }
         return nil
+    }
+}
+
+/// The colours of the window buttons, mirroring macOS's accent colour choices
+/// (System Settings ▸ Appearance). With the Graphite accent, macOS draws window controls
+/// grey; with any other accent they stay red, yellow and green.
+enum ButtonTheme: String, CaseIterable {
+    case system, multicolor, graphite, blue, purple, pink, red, orange, yellow, green
+
+    var label: String {
+        switch self {
+        case .system: return "Match System"
+        case .multicolor: return "Multicolor"
+        default: return rawValue.prefix(1).uppercased() + rawValue.dropFirst()
+        }
+    }
+
+    /// macOS's accent colours (one tint for every button).
+    var tint: UInt32? {
+        switch self {
+        case .blue: return 0x007AFF
+        case .purple: return 0xAF52DE
+        case .pink: return 0xFF2D55
+        case .red: return 0xFF3B30
+        case .orange: return 0xFF9500
+        case .yellow: return 0xFFCC00
+        case .green: return 0x28CD41
+        default: return nil
+        }
+    }
+
+    /// "Match System": the global AppleAccentColor setting is -1 for Graphite; anything
+    /// else (or not set, which is Multicolor) keeps the usual red, yellow and green.
+    func resolved(systemAccent: Int?) -> ButtonTheme {
+        guard self == .system else { return self }
+        return systemAccent == -1 ? .graphite : .multicolor
     }
 }
 

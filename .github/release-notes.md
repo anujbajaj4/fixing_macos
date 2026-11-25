@@ -1,7 +1,9 @@
 Control any window right from Mission Control: point at it, then use the buttons on its corner or a shortcut.
 
-## What's new in 1.3.1
-- **No more stray buttons.** On macOS 27, Mission Control also lists things that aren't drawn as windows (invisible helper windows, placeholders behind real windows), and 1.3.0 put buttons on them too. Buttons now only appear on thumbnails that match one real, visible window MC Close can act on.
+## What's new in 1.4.0
+- **Buttons that look like the window's own.** MC Close now finds where each window's real controls are and draws its buttons exactly over their miniature in Mission Control, at the same size, with zoom (+) as a fourth control after green. No extra background.
+- **Button colours to match your Mac.** Choose **Button Colours** in the menu: Match System (the default), Multicolor, Graphite, Blue, Purple, Pink, Red, Orange, Yellow or Green, like the accent colours in System Settings ▸ Appearance. On a Mac set to Graphite, Match System draws grey buttons, as macOS does.
+- **No more stray buttons** on things in Mission Control that aren't windows.
 
 ## In 1.3.0
 - **Buttons on every window, where they belong.** When Mission Control opens, each window gets its own controls in the top-left corner of its title bar, in Apple's red, yellow and green (plus a graphite + for zoom), on a small frosted pill, instead of one set following the pointer. Like on a real window, the symbols appear when you point at the buttons, and holding Option turns green into +. Narrow windows get smaller buttons that fit.

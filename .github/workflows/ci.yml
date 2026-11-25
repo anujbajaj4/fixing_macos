@@ -83,19 +83,21 @@ jobs:
           tail -5 ~/Library/Logs/MCClose.log
           build/e2e "$RUNNER_TEMP/shots"
 
-      - name: End-to-end again, as on a macOS whose Dock sends no Mission Control notifications
+      - name: End-to-end again, as on a macOS whose Dock sends no Mission Control notifications, Graphite buttons
         if: success() || failure()
         run: |
           set -uo pipefail
           pkill -x MCClose || true
           sleep 1
           defaults write io.github.anujbajaj4.MCClose IgnoreDockNotifications -bool YES
+          defaults write io.github.anujbajaj4.MCClose ButtonTheme graphite
           mkdir -p "$RUNNER_TEMP/shots-layout"
           "$RUNNER_TEMP/Applications/MCClose.app/Contents/MacOS/MCClose" > "$RUNNER_TEMP/e2e-app2.txt" 2>&1 &
           sleep 3
-          build/e2e "$RUNNER_TEMP/shots-layout"
+          EXPECT_THEME=graphite build/e2e "$RUNNER_TEMP/shots-layout"
           status=$?
           defaults delete io.github.anujbajaj4.MCClose IgnoreDockNotifications || true
+          defaults delete io.github.anujbajaj4.MCClose ButtonTheme || true
           exit $status
 
       - name: Upload the build and screenshots

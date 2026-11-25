@@ -72,6 +72,7 @@ struct Thumbnail {
     let title: String
     let frame: CGRect   // top-left–origin global coordinates
     var appBundleID: String? = nil   // macOS 27 tells us the app in the thumbnail's identifier
+    var native: NativeControls? = nil // where the window's own controls are, once measured
 }
 
 enum WindowCloser {
@@ -178,6 +179,23 @@ enum WindowCloser {
             }
         }
         return snap
+    }
+
+    /// Where a window's own close/minimize/zoom controls are, relative to its top-left corner,
+    /// so ours can be drawn exactly over their miniature in the thumbnail. nil if the window
+    /// has no standard controls where expected.
+    static func nativeControls(_ window: AXUIElement) -> NativeControls? {
+        guard let wf = AX.frame(window), wf.width > 0,
+              let close = AX.element(window, kAXCloseButtonAttribute), let cf = AX.frame(close),
+              cf.width >= 6, cf.width <= 30 else { return nil }
+        let center = CGPoint(x: cf.midX - wf.minX, y: cf.midY - wf.minY)
+        guard center.x > 0, center.x < 200, center.y > 0, center.y < 80 else { return nil }   // in the title bar
+        var spacing = cf.width * 20 / 14   // Apple's proportions, if minimize can't be measured
+        if let m = AX.element(window, kAXMinimizeButtonAttribute), let mf = AX.frame(m),
+           mf.midX > cf.midX, mf.midX - cf.midX < cf.width * 3 {
+            spacing = mf.midX - cf.midX
+        }
+        return NativeControls(closeCenter: center, diameter: cf.width, spacing: spacing, windowSize: wf.size)
     }
 
     /// The one real window behind `thumb`, or the equally good ones if it's ambiguous.

@@ -102,9 +102,25 @@ func thumbnail(_ name: String) -> CGRect? {
 
 enum Button: Int { case close = 0, minimize, fullScreen, zoom }   // ButtonLayout order
 
-/// Centre of a button on a thumbnail (from the app's own ButtonLayout, compiled in).
-func buttonCenter(_ b: Button, on thumb: CGRect) -> CGPoint {
-    center(ButtonLayout.rects(forThumbnail: thumb, count: 4)[b.rawValue])
+/// The theme the app is set to for this pass (CI sets it for the second pass).
+let expectGraphite = ProcessInfo.processInfo.environment["EXPECT_THEME"] == "graphite"
+
+/// Where TextEdit's own window controls are, measured the same way the app does.
+func nativeControls(ofWindow title: String) -> NativeControls? {
+    guard let w = teWindow(title), let wf = frame(w),
+          let close: AXUIElement = attr(w, kAXCloseButtonAttribute), let cf = frame(close) else { return nil }
+    var spacing = cf.width * 20 / 14
+    if let m: AXUIElement = attr(w, kAXMinimizeButtonAttribute), let mf = frame(m), mf.midX > cf.midX { spacing = mf.midX - cf.midX }
+    return NativeControls(closeCenter: CGPoint(x: cf.midX - wf.minX, y: cf.midY - wf.minY),
+                          diameter: cf.width, spacing: spacing, windowSize: wf.size)
+}
+
+/// A button on a test window's thumbnail (from the app's own ButtonLayout, compiled in).
+func buttonRect(_ b: Button, on thumb: CGRect, window name: String) -> CGRect {
+    ButtonLayout.rects(forThumbnail: thumb, count: 4, native: nativeControls(ofWindow: name + ".txt"))[b.rawValue]
+}
+func buttonCenter(_ b: Button, on thumb: CGRect, window name: String) -> CGPoint {
+    center(buttonRect(b, on: thumb, window: name))
 }
 
 /// The colour on screen at a point, as 0–255 sRGB.
@@ -116,12 +132,16 @@ func pixel(at p: CGPoint) -> (r: Int, g: Int, b: Int)? {
     return (Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
 }
 /// A spot inside a button, clear of its symbol.
-func fillSpot(_ b: Button, on thumb: CGRect) -> CGPoint {
-    let c = buttonCenter(b, on: thumb)
-    return CGPoint(x: c.x, y: c.y - 4)
+func fillSpot(_ b: Button, on thumb: CGRect, window name: String) -> CGPoint {
+    let r = buttonRect(b, on: thumb, window: name)
+    return CGPoint(x: r.midX, y: r.midY - r.height * 0.3)
 }
+func luminance(_ px: (r: Int, g: Int, b: Int)?) -> Int { px.map { ($0.r * 3 + $0.g * 6 + $0.b) / 10 } ?? 0 }
 func looks(_ px: (r: Int, g: Int, b: Int)?, like b: Button) -> Bool {
     guard let px else { return false }
+    if expectGraphite {   // every button grey, like macOS's Graphite window controls
+        return abs(px.r - px.g) < 18 && abs(px.g - px.b) < 18 && px.r > 90 && px.r < 225
+    }
     switch b {
     case .close:      return px.r > 200 && px.g < 140 && px.b < 140
     case .minimize:   return px.r > 200 && px.g > 140 && px.b < 120
@@ -153,8 +173,8 @@ func hover(_ name: String) -> CGRect? {
     return f
 }
 /// Click one of the buttons on a thumbnail.
-func clickButton(_ b: Button, on thumb: CGRect) -> Bool {
-    let p = buttonCenter(b, on: thumb)
+func clickButton(_ b: Button, on thumb: CGRect, window name: String) -> Bool {
+    let p = buttonCenter(b, on: thumb, window: name)
     move(to: p); wait(0.3)
     click(p)
     return true
@@ -247,16 +267,16 @@ wait(1)   // the buttons fade in once Mission Control has settled
 ok(!overlayFrames().isEmpty, "the button layer is showing")
 for name in ["e2e-beta", "e2e-delta", "e2e-zeta"] {
     if let f = thumbnail(name) {
-        let colours = [Button.close, .minimize, .fullScreen, .zoom].map { looks(pixel(at: fillSpot($0, on: f)), like: $0) }
-        ok(!colours.contains(false), "\(name) has its own red, yellow, green and graphite buttons in its corner \(colours)")
+        let colours = [Button.close, .minimize, .fullScreen, .zoom].map { looks(pixel(at: fillSpot($0, on: f, window: name)), like: $0) }
+        ok(!colours.contains(false), "\(name) has its own \(expectGraphite ? "grey (Graphite theme)" : "red, yellow, green and graphite") buttons over its own controls \(colours)")
     } else { ok(false, "found \(name)'s thumbnail") }
 }
 if let alpha = hover("e2e-alpha") {
-    let plain = pixel(at: buttonCenter(.close, on: alpha))
-    move(to: buttonCenter(.minimize, on: alpha)); wait(0.4)   // over the buttons: symbols appear
+    let plain = pixel(at: buttonCenter(.close, on: alpha, window: "e2e-alpha"))
+    move(to: buttonCenter(.minimize, on: alpha, window: "e2e-alpha")); wait(0.4)   // over the buttons: symbols appear
     shot("3-hover-buttons", inline: true)
-    let withSymbol = pixel(at: buttonCenter(.close, on: alpha))
-    ok(looks(plain, like: .close) && withSymbol.map { $0.r < 200 } == true,
+    let withSymbol = pixel(at: buttonCenter(.close, on: alpha, window: "e2e-alpha"))
+    ok(looks(plain, like: .close) && luminance(withSymbol) < luminance(plain) - 30,
        "symbols appear only while the pointer is over a window's buttons (\(String(describing: plain)) → \(String(describing: withSymbol)))")
     move(to: center(alpha)); wait(0.3)
     // MARK: ⌘W
@@ -267,13 +287,13 @@ if let alpha = hover("e2e-alpha") {
 } else { ok(false, "found alpha's thumbnail") }
 
 // MARK: Close button
-if let f = hover("e2e-beta"), clickButton(.close, on: f) {
+if let f = hover("e2e-beta"), clickButton(.close, on: f, window: "e2e-beta") {
     wait(1.5)
     ok(teWindow("e2e-beta.txt") == nil, "close button closed the hovered window")
 } else { ok(false, "close button shown on beta") }
 
 // MARK: Minimize button
-if let f = hover("e2e-delta"), clickButton(.minimize, on: f) {
+if let f = hover("e2e-delta"), clickButton(.minimize, on: f, window: "e2e-delta") {
     wait(1.5)
     ok(boolAttr(teWindow("e2e-delta.txt"), kAXMinimizedAttribute), "minimize button minimized the hovered window")
 } else { ok(false, "buttons shown on delta") }
@@ -286,7 +306,7 @@ if hover("e2e-epsilon") != nil {
 } else { ok(false, "found epsilon's thumbnail") }
 
 // MARK: Zoom button, then ⌥⌘F restores
-if let f = hover("e2e-zeta"), clickButton(.zoom, on: f) {
+if let f = hover("e2e-zeta"), clickButton(.zoom, on: f, window: "e2e-zeta") {
     wait(1.5)
     let z = teWindow("e2e-zeta.txt").flatMap(frame) ?? .zero
     let v = visibleScreenAX()
@@ -355,7 +375,7 @@ if teWindow("e2e-gamma.txt") != nil {
 let logBeforeFullScreen = logText().count
 sh("open -a 'Mission Control'")
 wait(2.5)
-if let f = hover("e2e-theta"), clickButton(.fullScreen, on: f) {
+if let f = hover("e2e-theta"), clickButton(.fullScreen, on: f, window: "e2e-theta") {
     let became = waitFor(8) { boolAttr(teWindow("e2e-theta.txt"), "AXFullScreen") }
     shot("6-after-full-screen", inline: true)
     ok(became, "full-screen button left Mission Control and put the hovered window in full screen")

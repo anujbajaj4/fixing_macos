@@ -1,63 +1,66 @@
 import Cocoa
 
-/// The look of macOS's own window controls (red, yellow, green), plus a graphite fourth
-/// button for Zoom. Symbols appear only while the pointer is over a window's buttons,
-/// as on a real window; holding Option turns the green button into +.
-private enum Style {
+/// Colours of the window buttons for each theme, like macOS's own window controls.
+enum ButtonPalette {
     struct Colors { let fill: NSColor; let rim: NSColor; let glyph: NSColor }
-    static func colors(_ action: WindowAction) -> Colors {
-        func c(_ hex: UInt32, _ a: CGFloat = 1) -> NSColor {
-            NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                    blue: CGFloat(hex & 0xFF) / 255, alpha: a)
+
+    static func hex(_ v: UInt32, _ a: CGFloat = 1) -> NSColor {
+        NSColor(srgbRed: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255,
+                blue: CGFloat(v & 0xFF) / 255, alpha: a)
+    }
+
+    static func graphite(dark: Bool) -> Colors {
+        dark ? Colors(fill: hex(0x707075), rim: hex(0x5E5E63), glyph: hex(0x1C1C1E, 0.85))
+             : Colors(fill: hex(0xC2C2C6), rim: hex(0xA8A8AD), glyph: hex(0x48484C, 0.9))
+    }
+
+    static func colors(_ action: WindowAction, theme: ButtonTheme, dark: Bool) -> Colors {
+        if let t = theme.tint {
+            let fill = hex(t)
+            return Colors(fill: fill, rim: fill.blended(withFraction: 0.18, of: .black) ?? fill,
+                          glyph: (fill.blended(withFraction: 0.62, of: .black) ?? .black).withAlphaComponent(0.85))
         }
-        switch action {
-        case .close:      return Colors(fill: c(0xFF5F57), rim: c(0xE0443E), glyph: c(0x4D0000, 0.8))
-        case .minimize:   return Colors(fill: c(0xFEBC2E), rim: c(0xDEA123), glyph: c(0x995700, 0.85))
-        case .fullScreen: return Colors(fill: c(0x28C840), rim: c(0x1AAB29), glyph: c(0x006500, 0.85))
-        case .zoom:       return Colors(fill: c(0xA5A5AA), rim: c(0x8A8A8F), glyph: c(0x2C2C2E, 0.85))
-        case .hideApp, .quitApp: return Colors(fill: .clear, rim: .clear, glyph: .clear)
+        if theme == .graphite { return graphite(dark: dark) }
+        switch action {   // Multicolor
+        case .close:      return Colors(fill: hex(0xFF5F57), rim: hex(0xE0443E), glyph: hex(0x4D0000, 0.8))
+        case .minimize:   return Colors(fill: hex(0xFEBC2E), rim: hex(0xDEA123), glyph: hex(0x995700, 0.85))
+        case .fullScreen: return Colors(fill: hex(0x28C840), rim: hex(0x1AAB29), glyph: hex(0x006500, 0.85))
+        default:          return graphite(dark: dark)   // Zoom, the fourth, is the neutral one
         }
     }
 }
 
-/// One transparent, click-through layer per screen. It draws a row of buttons on every
-/// window thumbnail; clicks on them are caught by the event tap (Mission Control would
-/// otherwise take them), every other click goes to Mission Control as usual.
+/// One transparent, click-through layer per screen. It draws each window's buttons over the
+/// miniature of that window's own controls; clicks on them are caught by the event tap
+/// (Mission Control would otherwise take them), every other click goes to Mission Control.
 private final class ButtonsView: NSView {
-    var thumbnails: [CGRect] = []        // in this view's coordinates (top-left origin)
-    var hoveredGroup: Int?               // thumbnail whose buttons the pointer is over
+    var rows: [[CGRect]] = []            // per thumbnail, in this view's coordinates
+    var hoveredGroup: Int?               // row the pointer is over: its symbols show
     var pressed: (thumbnail: Int, button: Int)?
     var optionHeld = false
+    var theme: ButtonTheme = .multicolor
+    var dark = false
 
     override var isFlipped: Bool { true }   // same orientation as the AX coordinates
 
     override func draw(_ dirtyRect: NSRect) {
         let actions = WindowAction.buttons
-        for (t, frame) in thumbnails.enumerated() {
+        for (t, row) in rows.enumerated() {
             let showSymbols = hoveredGroup == t
-            for (b, rect) in ButtonLayout.rects(forThumbnail: frame, count: actions.count).enumerated() {
-                var action = actions[b]
-                if action == .fullScreen && optionHeld && showSymbols { action = .zoom }   // Option-green
-                drawButton(actions[b], symbol: action, in: rect, symbols: showSymbols,
+            for (b, rect) in row.enumerated() where b < actions.count {
+                var symbol = actions[b]
+                if symbol == .fullScreen && optionHeld && showSymbols { symbol = .zoom }   // Option-green
+                drawButton(actions[b], symbol: symbol, in: rect, symbols: showSymbols,
                            pressed: pressed.map { $0.thumbnail == t && $0.button == b } ?? false)
             }
         }
     }
 
     private func drawButton(_ kind: WindowAction, symbol: WindowAction, in rect: CGRect, symbols: Bool, pressed: Bool) {
-        let colors = Style.colors(kind)
-        let circle = NSBezierPath(ovalIn: rect)
-
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
-        shadow.shadowBlurRadius = 2.5
-        shadow.shadowOffset = NSSize(width: 0, height: -0.5)
-        shadow.set()
-        (pressed ? colors.fill.blended(withFraction: 0.25, of: .black) ?? colors.fill : colors.fill).setFill()
-        circle.fill()
-        NSGraphicsContext.restoreGraphicsState()
-
+        let colors = ButtonPalette.colors(kind, theme: theme, dark: dark)
+        let fill = pressed ? (colors.fill.blended(withFraction: 0.22, of: .black) ?? colors.fill) : colors.fill
+        fill.setFill()
+        NSBezierPath(ovalIn: rect).fill()
         colors.rim.setStroke()
         let rim = NSBezierPath(ovalIn: rect.insetBy(dx: 0.25, dy: 0.25))
         rim.lineWidth = 0.5
@@ -68,7 +71,7 @@ private final class ButtonsView: NSView {
         let r = rect.width * 0.24
         colors.glyph.set()
         let path = NSBezierPath()
-        path.lineWidth = max(1.1, rect.width / 11)
+        path.lineWidth = max(1, rect.width / 11)
         path.lineCapStyle = .round
         switch symbol {
         case .close:
@@ -101,62 +104,29 @@ private final class ButtonsView: NSView {
     }
 }
 
-private final class FlippedView: NSView {
-    override var isFlipped: Bool { true }
-}
-
-/// One screen's layer: frosted pills (the macOS HUD material) under the buttons.
 private final class ScreenLayer {
     let panel: NSPanel
-    let container = FlippedView()
     let view: ButtonsView
     let screen: NSScreen
-    var pills: [NSVisualEffectView] = []
-
-    init(panel: NSPanel, view: ButtonsView, screen: NSScreen) {
-        self.panel = panel
-        self.view = view
-        self.screen = screen
-    }
-
-    /// One pill per thumbnail, behind its buttons; hides the thumbnail's own tiny controls.
-    func layoutPills(_ thumbnails: [CGRect]) {
-        while pills.count < thumbnails.count {
-            let pill = NSVisualEffectView()
-            pill.material = .hudWindow
-            pill.blendingMode = .behindWindow
-            pill.state = .active
-            pill.wantsLayer = true
-            pill.layer?.masksToBounds = true
-            pill.layer?.borderWidth = 0.5
-            pill.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
-            container.addSubview(pill, positioned: .below, relativeTo: view)
-            pills.append(pill)
-        }
-        while pills.count > thumbnails.count { pills.removeLast().removeFromSuperview() }
-        for (pill, f) in zip(pills, thumbnails) {
-            let r = ButtonLayout.pillRect(forThumbnail: f, count: WindowAction.buttons.count)
-            pill.frame = r
-            pill.layer?.cornerRadius = r.height / 2
-        }
-    }
+    init(panel: NSPanel, view: ButtonsView, screen: NSScreen) { self.panel = panel; self.view = view; self.screen = screen }
 }
 
-/// Shows window buttons on every thumbnail while Mission Control is open, and keeps
+/// Shows window buttons on every window thumbnail while Mission Control is open, and keeps
 /// track of the thumbnails (the keyboard shortcuts use them too).
 final class WindowButtonsOverlay: NSObject {
     private var panels: [ScreenLayer] = []
     private var timer: Timer?
     private var thumbnails: [Thumbnail] = []        // the ones that get buttons
+    private var rows: [[CGRect]] = []               // their buttons, AX coordinates
     private var previousFrames: [CGRect] = []
-    /// Does a thumbnail (by app + title) have exactly one real, visible window behind it?
-    /// Checked off the main thread; no buttons until the answer is yes.
-    private var verdicts: [String: Bool] = [:]
-    private var checking = false
-    private var logged: Set<String> = []
     private var thumbnailsRead = Date.distantPast
     private var shown = false
     private var loggedOnce = false
+    /// Does a thumbnail (by app + title) have exactly one real, visible window behind it, and
+    /// where are that window's own controls? Checked off the main thread; no buttons until yes.
+    private var verdicts: [String: (ok: Bool, native: NativeControls?)] = [:]
+    private var checking = false
+    private var logged: Set<String> = []
     /// The button pressed in the event tap, waiting for `perform` on the main thread.
     private var armed: (action: WindowAction, thumbnail: Thumbnail)?
 
@@ -169,14 +139,21 @@ final class WindowButtonsOverlay: NSObject {
         }
     }
 
+    /// The chosen theme ("Match System" unless changed in the menu).
+    var theme: ButtonTheme {
+        get { ButtonTheme(rawValue: UserDefaults.standard.string(forKey: "ButtonTheme") ?? "") ?? .system }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "ButtonTheme"); applyTheme() }
+    }
+
     func start() {
         timer?.invalidate()
         loggedOnce = false
+        shown = false
         verdicts = [:]          // windows may have changed since last time
         logged = []
-        shown = false
         previousFrames = []
         buildPanels()
+        applyTheme()
         let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.update() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
@@ -186,6 +163,7 @@ final class WindowButtonsOverlay: NSObject {
         timer?.invalidate()
         timer = nil
         thumbnails = []
+        rows = []
         previousFrames = []
         thumbnailsRead = .distantPast
         armed = nil
@@ -202,9 +180,8 @@ final class WindowButtonsOverlay: NSObject {
     /// The button at `point` (AX coordinates), if one is showing there. Called by the event
     /// tap on mouse-down; remembers which window it belongs to for `perform`.
     func button(at point: CGPoint, optionHeld: Bool) -> WindowAction? {
-        guard timer != nil, shown, showButtons,
-              let hit = ButtonLayout.hit(point, thumbnails: thumbnails.map(\.frame),
-                                         count: WindowAction.buttons.count) else { return nil }
+        guard timer != nil, shown, showButtons, let hit = ButtonLayout.hit(point, rows: rows),
+              hit.thumbnail < thumbnails.count, hit.button < WindowAction.buttons.count else { return nil }
         var action = WindowAction.buttons[hit.button]
         if action == .fullScreen && optionHeld { action = .zoom }   // Option-click green, as on a window
         armed = (action, thumbnails[hit.thumbnail])
@@ -217,10 +194,22 @@ final class WindowButtonsOverlay: NSObject {
         self.armed = nil
         for p in panels { p.view.pressed = nil; p.view.needsDisplay = true }
         WindowCloser.perform(action, on: armed.thumbnail, via: "button")
-        thumbnailsRead = .distantPast   // the layout changes after a close or minimize
+        verdicts[Self.key(armed.thumbnail)] = nil   // its size may have changed (zoom): measure again
+        thumbnailsRead = .distantPast                // the layout changes after a close or minimize
     }
 
     // MARK: - Internals
+
+    private func applyTheme() {
+        let systemAccent = UserDefaults.standard.object(forKey: "AppleAccentColor") as? Int
+        let resolved = theme.resolved(systemAccent: systemAccent)
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        for p in panels {
+            p.view.theme = resolved
+            p.view.dark = dark
+            p.view.needsDisplay = true
+        }
+    }
 
     private static func key(_ t: Thumbnail) -> String { (t.appBundleID ?? "") + "\u{1}" + t.title }
 
@@ -240,24 +229,28 @@ final class WindowButtonsOverlay: NSObject {
                     + "\(Int(t.frame.width))x\(Int(t.frame.height)) at \(Int(t.frame.minX)),\(Int(t.frame.minY)))")
                 continue
             }
-            switch verdicts[k] {
-            case true?: keep.append(t)
-            case false?: break
-            case nil: unknown.append(t)
+            if let v = verdicts[k] {
+                if v.ok { var t = t; t.native = v.native; keep.append(t) }
+            } else {
+                unknown.append(t)
             }
         }
         thumbnails = keep
+        rows = keep.map { ButtonLayout.rects(forThumbnail: $0.frame, count: WindowAction.buttons.count, native: $0.native) }
         guard !unknown.isEmpty, !checking else { return }
         checking = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let snap = WindowCloser.snapshot()
-            let results = unknown.map { (Self.key($0), $0, WindowCloser.match($0, in: snap).window != nil) }
+            let results: [(String, Thumbnail, Bool, NativeControls?)] = unknown.map { t in
+                let window = WindowCloser.match(t, in: snap).window
+                return (Self.key(t), t, window != nil, window.flatMap(WindowCloser.nativeControls))
+            }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.checking = false
                 guard self.timer != nil else { return }   // Mission Control closed meanwhile
-                for (k, t, ok) in results {
-                    self.verdicts[k] = ok
+                for (k, t, ok, native) in results {
+                    self.verdicts[k] = (ok, native)
                     if !ok {
                         self.logOnce(k + "nomatch", "overlay: no buttons for \(Log.title(t.title))"
                             + (t.appBundleID.map { " (\($0))" } ?? "") + ": no single visible window of a normal app has that title")
@@ -283,25 +276,20 @@ final class WindowButtonsOverlay: NSObject {
             previousFrames = frames
             if !loggedOnce && !frames.isEmpty {
                 loggedOnce = true
-                Log.write("overlay: buttons on \(frames.count) window thumbnails")
+                let measured = thumbnails.filter { $0.native != nil }.count
+                Log.write("overlay: buttons on \(frames.count) window thumbnails (\(measured) placed over the window's own controls)")
             }
             if settled && !shown && showButtons { showPanels() }
             if frames.isEmpty && shown { hidePanels(animated: true) }
             for p in panels {
-                let local = frames.map { convert($0, to: p.screen) }
-                if p.view.thumbnails != local {
-                    p.view.thumbnails = local
-                    p.layoutPills(local)
-                    p.view.needsDisplay = true
-                }
+                let local = rows.map { $0.map { convert($0, to: p.screen) } }
+                if p.view.rows != local { p.view.rows = local; p.view.needsDisplay = true }
             }
         }
 
         // Symbols appear while the pointer is over a window's buttons.
         let mouse = WindowCloser.mouseLocation()
-        let hovered = thumbnails.firstIndex {
-            ButtonLayout.groupRect(forThumbnail: $0.frame, count: WindowAction.buttons.count).contains(mouse)
-        }
+        let hovered = rows.firstIndex { ButtonLayout.groupRect($0).contains(mouse) }
         let option = NSEvent.modifierFlags.contains(.option)
         for p in panels where p.view.hoveredGroup != hovered || p.view.optionHeld != option {
             p.view.hoveredGroup = hovered
@@ -331,14 +319,10 @@ final class WindowButtonsOverlay: NSObject {
             panel.ignoresMouseEvents = true      // clicks go to Mission Control; ours are caught by the tap
             panel.hidesOnDeactivate = false
             panel.alphaValue = 0
-            let size = NSRect(origin: .zero, size: screen.frame.size)
-            let view = ButtonsView(frame: size)
-            let layer = ScreenLayer(panel: panel, view: view, screen: screen)
-            layer.container.frame = size
-            layer.container.addSubview(view)
-            panel.contentView = layer.container
+            let view = ButtonsView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            panel.contentView = view
             panel.setFrame(screen.frame, display: false)
-            return layer
+            return ScreenLayer(panel: panel, view: view, screen: screen)
         }
     }
 

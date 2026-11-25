@@ -33,6 +33,12 @@ struct MenuContent: View {
         }
         Toggle("Show Window Buttons", isOn: Binding(get: { state.showCloseButton },
                                                     set: { state.setShowCloseButton($0) }))
+        Picker("Button Colours", selection: Binding(get: { state.buttonTheme },
+                                                    set: { state.setButtonTheme($0) })) {
+            ForEach(ButtonTheme.allCases, id: \.self) { theme in
+                Text(theme.label).tag(theme)
+            }
+        }
         Toggle("Start at Login", isOn: Binding(get: { state.startAtLogin },
                                                set: { state.setStartAtLogin($0) }))
         Divider()
@@ -67,6 +73,13 @@ final class AppState: ObservableObject {
         .flatMap { Version.isNewer($0, than: AppState.version) ? $0 : nil }
 
     var onShowCloseButtonChange: ((Bool) -> Void)?
+    @Published var buttonTheme = ButtonTheme(rawValue: UserDefaults.standard.string(forKey: "ButtonTheme") ?? "") ?? .system
+    var onButtonThemeChange: ((ButtonTheme) -> Void)?
+
+    func setButtonTheme(_ theme: ButtonTheme) {
+        buttonTheme = theme
+        onButtonThemeChange?(theme)
+    }
 
     var headline: String {
         if !trusted { return "Needs Accessibility permission" }
@@ -208,6 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.keyTap.shutDown()
             self?.overlay.stop()
         }
+        state.onButtonThemeChange = { [weak self] theme in self?.overlay.theme = theme }
         state.onShowCloseButtonChange = { [weak self] on in
             guard let self else { return }
             self.overlay.showButtons = on
