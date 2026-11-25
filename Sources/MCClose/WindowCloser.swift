@@ -169,13 +169,15 @@ enum WindowCloser {
             let appName = app.localizedName ?? ""
             for window in AX.elements(appElement, kAXWindowsAttribute) {
                 // Invisible helper windows are often tiny; they're never what a thumbnail shows.
-                if let f = AX.frame(window), f.width < 40 || f.height < 30 { continue }
+                let frame = AX.frame(window)
+                if let f = frame, f.width < 40 || f.height < 30 { continue }
                 snap.windows.append(window)
                 snap.bundleIDs.append(app.bundleIdentifier)
                 snap.candidates.append(WindowCandidate(
                     title: AX.string(window, kAXTitleAttribute) ?? "",
                     appName: appName,
-                    minimized: AX.bool(window, kAXMinimizedAttribute) ?? false))
+                    minimized: AX.bool(window, kAXMinimizedAttribute) ?? false,
+                    size: frame?.size))
             }
         }
         return snap
@@ -203,11 +205,14 @@ enum WindowCloser {
     static func match(_ thumb: Thumbnail, in snap: WindowSnapshot, trace: ((String) -> Void)? = nil)
         -> (window: AXUIElement?, ambiguous: [AXUIElement]) {
         var indices = Array(snap.windows.indices)
+        var oneApp = false
         if let bundle = thumb.appBundleID {
             let own = indices.filter { snap.bundleIDs[$0] == bundle }
-            if !own.isEmpty { indices = own; trace?("thumbnail belongs to \(bundle)") }
+            if !own.isEmpty { indices = own; oneApp = true; trace?("thumbnail belongs to \(bundle)") }
         }
-        let outcome = WindowMatcher.pick(thumbnailTitle: thumb.title, from: indices.map { snap.candidates[$0] })
+        // Within one app, the thumbnail's shape can identify the window when titles differ.
+        let outcome = WindowMatcher.pick(thumbnailTitle: thumb.title, thumbnailSize: thumb.frame.size,
+                                         shapeAlone: oneApp, from: indices.map { snap.candidates[$0] })
         trace?("thumbnail \(Log.title(thumb.title)) vs \(indices.count) windows: \(outcome)")
         switch outcome {
         case .match(let i): return (snap.windows[indices[i]], [])

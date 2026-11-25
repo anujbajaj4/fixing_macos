@@ -9,6 +9,7 @@ struct WindowCandidate: Equatable {
     let title: String      // the window's AXTitle ("" if it has none)
     let appName: String    // the owning app's localized name
     let minimized: Bool    // minimized windows aren't shown in Mission Control
+    var size: CGSize? = nil
 }
 
 enum WindowMatcher {
@@ -18,32 +19,62 @@ enum WindowMatcher {
         case ambiguous([Int])    // the equally good candidates
     }
 
-    /// Pick the real window behind a Mission Control thumbnail, by title.
-    ///
-    /// 1. Exact title match wins, if there is exactly one.
-    /// 2. Otherwise a "loose" match: the thumbnail title contains the window title,
-    ///    or the window has no title and the thumbnail shows the app's name.
-    /// If more than one window fits equally well we refuse: closing the wrong
-    /// window is worse than closing nothing.
-    static func pick(thumbnailTitle thumb: String, from candidates: [WindowCandidate]) -> Outcome {
-        let thumb = thumb.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !thumb.isEmpty else { return .none }
+    /// Titles compared loosely: case, spacing and an "— Edited" ending don't matter.
+    static func normalize(_ s: String) -> String {
+        var t = s.replacingOccurrences(of: "\u{00A0}", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        for suffix in ["— Edited", "– Edited", "- Edited"] where t.lowercased().hasSuffix(suffix.lowercased()) {
+            t = String(t.dropLast(suffix.count)).trimmingCharacters(in: .whitespaces)
+        }
+        return t.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
+    }
 
+    /// Mission Control shrinks windows without changing their proportions.
+    static func sameShape(_ a: CGSize, _ b: CGSize, tolerance: CGFloat = 0.03) -> Bool {
+        guard a.width > 0, a.height > 0, b.width > 0, b.height > 0 else { return false }
+        let ra = a.width / a.height, rb = b.width / b.height
+        return abs(ra - rb) / rb <= tolerance
+    }
+
+    /// Pick the real window behind a Mission Control thumbnail.
+    ///
+    /// 1. Same title (compared loosely) wins, if exactly one window has it.
+    /// 2. Otherwise a "loose" match: one title contains the other, or the window has no
+    ///    title and the thumbnail shows the app's name.
+    /// 3. When several fit equally well, the one with the thumbnail's shape wins.
+    /// 4. With `shapeAlone` (the candidates are already one app's windows, as on macOS 27),
+    ///    a window can be picked by shape alone when no title fits.
+    /// Anything still ambiguous is refused: closing the wrong window is worse than closing nothing.
+    static func pick(thumbnailTitle: String, thumbnailSize: CGSize? = nil, shapeAlone: Bool = false,
+                     from candidates: [WindowCandidate]) -> Outcome {
+        let thumb = normalize(thumbnailTitle)
         var exact: [Int] = []
         var loose: [Int] = []
-        for (i, c) in candidates.enumerated() where !c.minimized {
-            let title = c.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        for (i, c) in candidates.enumerated() where !c.minimized && !thumb.isEmpty {
+            let title = normalize(c.title)
             if !title.isEmpty && title == thumb {
                 exact.append(i)
-            } else if (!title.isEmpty && thumb.contains(title))
-                        || (title.isEmpty && !c.appName.isEmpty && thumb == c.appName) {
+            } else if (title.count >= 3 && (thumb.contains(title) || title.contains(thumb)))
+                        || (title.isEmpty && !c.appName.isEmpty && thumb == normalize(c.appName)) {
                 loose.append(i)
             }
         }
-        if exact.count == 1 { return .match(exact[0]) }
-        if exact.count > 1 { return .ambiguous(exact) }
-        if loose.count == 1 { return .match(loose[0]) }
-        if loose.count > 1 { return .ambiguous(loose) }
+        func shaped(_ list: [Int]) -> [Int] {
+            guard let ts = thumbnailSize else { return [] }
+            return list.filter { candidates[$0].size.map { sameShape($0, ts) } ?? false }
+        }
+        func decide(_ list: [Int]) -> Outcome? {
+            if list.count == 1 { return .match(list[0]) }
+            guard list.count > 1 else { return nil }
+            let s = shaped(list)
+            return s.count == 1 ? .match(s[0]) : .ambiguous(list)
+        }
+        if let o = decide(exact) { return o }
+        if let o = decide(loose) { return o }
+        if shapeAlone {
+            let s = shaped(candidates.indices.filter { !candidates[$0].minimized })
+            if s.count == 1 { return .match(s[0]) }
+            if s.count > 1 { return .ambiguous(s) }
+        }
         return .none
     }
 }

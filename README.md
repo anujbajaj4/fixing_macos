@@ -1,5 +1,8 @@
 # MC Close
 
+[![Downloads](https://img.shields.io/github/downloads/anujbajaj4/fixing_macos/total?label=downloads)](https://github.com/anujbajaj4/fixing_macos/tree/stats)
+[![Website](https://img.shields.io/badge/website-anujbajaj4.github.io%2Ffixing__macos-0A7AFF)](https://anujbajaj4.github.io/fixing_macos/)
+
 Control windows right from **Mission Control** on your Mac. Open Mission Control and every window gets
 its own buttons in the corner of its title bar, in Apple's colours: close, minimize, full screen, and zoom.
 
@@ -107,6 +110,24 @@ secrets, `MCCLOSE_SIGNING_P12` (the .p12, base64) and `MCCLOSE_SIGNING_PASSWORD`
 `scripts/ci_signing.sh`. Without them, builds are signed ad hoc, and the installer then resets the
 permission on update so macOS asks again. Keep the .p12 private and never commit it.
 
+## Website
+
+`site/` is the website (one hand-written page, plus `llms.txt`, `robots.txt` and `sitemap.xml`). The
+**Pages** workflow publishes it to https://anujbajaj4.github.io/fixing_macos/ together with a mirror of the
+installer and the latest .dmg; the Release workflow refreshes it.
+
+## Download numbers
+
+GitHub counts each download of the .dmg: every install or update (Terminal command, in-app updater or
+browser) is one. The **Download stats** workflow records the counts once a day on the
+[`stats` branch](https://github.com/anujbajaj4/fixing_macos/tree/stats): a summary with totals, change over
+a day and a week and a per-version table, plus the raw `downloads.csv`. Run it from the Actions tab for an
+update now. For the exact count this minute:
+
+```bash
+gh api repos/anujbajaj4/fixing_macos/releases --jq '[.[].assets[] | select(.name=="MCClose.dmg") | .download_count] | add'
+```
+
 ## Releasing
 
 1. Bump `VERSION` and update `.github/release-notes.md`.
@@ -129,4 +150,4 @@ tccutil reset Accessibility io.github.anujbajaj4.MCClose
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE). The website bundles the Inter typeface under the SIL Open Font License (`site/fonts/LICENSE-Inter.txt`).
+MIT. See [LICENSE](LICENSE).

@@ -27,8 +27,31 @@ check(WindowMatcher.pick(thumbnailTitle: "Finder", from: [w("", "Finder"), w("Do
       "untitled window matched by app name")
 check(WindowMatcher.pick(thumbnailTitle: "Report", from: [w("Report"), w("Re")]) == .match(0),
       "exact beats loose")
-check(WindowMatcher.pick(thumbnailTitle: "a b", from: [w("a"), w("b")]) == .ambiguous([0, 1]),
+check(WindowMatcher.pick(thumbnailTitle: "Alpha Beta", from: [w("Alpha"), w("Beta")]) == .ambiguous([0, 1]),
       "two loose matches: refuse")
+// Seen on macOS 27 (Preview): the thumbnail and the window title differ a little.
+check(WindowMatcher.pick(thumbnailTitle: "Report.pdf", from: [w("Report.pdf — Edited"), w("Other.pdf")]) == .match(0),
+      "an Edited ending doesn't matter")
+check(WindowMatcher.pick(thumbnailTitle: "report.pdf", from: [w("Report.pdf"), w("Other.pdf")]) == .match(0), "case doesn't matter")
+check(WindowMatcher.pick(thumbnailTitle: "Report", from: [w("Report.pdf (page 2 of 9)"), w("Other.pdf")]) == .match(0),
+      "a window title that contains the thumbnail's matches")
+check(WindowMatcher.pick(thumbnailTitle: "a", from: [w("ab")]) == .none, "one-letter titles don't loosely match")
+// The thumbnail's shape breaks ties and, within one app, can find the window alone.
+func ws(_ t: String, _ wd: CGFloat, _ ht: CGFloat) -> WindowCandidate { WindowCandidate(title: t, appName: "Preview", minimized: false, size: CGSize(width: wd, height: ht)) }
+let thumbShape = CGSize(width: 383, height: 251)   // a 600x400 window in Mission Control (1.5 : 1)
+check(WindowMatcher.pick(thumbnailTitle: "Untitled", thumbnailSize: thumbShape, from: [ws("Untitled", 600, 400), ws("Untitled", 800, 900)]) == .match(0),
+      "same title twice: the one with the thumbnail's shape wins")
+check(WindowMatcher.pick(thumbnailTitle: "Untitled", thumbnailSize: thumbShape, from: [ws("Untitled", 600, 400), ws("Untitled", 900, 600)]) == .ambiguous([0, 1]),
+      "same title and same shape: refuse")
+check(WindowMatcher.pick(thumbnailTitle: "Something else entirely", thumbnailSize: thumbShape, shapeAlone: true,
+                         from: [ws("Doc A", 600, 400), ws("Doc B", 500, 700), ws("Doc C", 400, 800)]) == .match(0),
+      "within one app, no title fits: the only window with that shape")
+check(WindowMatcher.pick(thumbnailTitle: "Something else entirely", thumbnailSize: thumbShape,
+                         from: [ws("Doc A", 600, 400), ws("Doc B", 500, 700)]) == .none,
+      "across all apps, shape alone never picks a window")
+check(WindowMatcher.pick(thumbnailTitle: "Something else entirely", thumbnailSize: thumbShape, shapeAlone: true,
+                         from: [ws("Doc A", 600, 400), ws("Doc B", 300, 200)]) == .ambiguous([0, 1]),
+      "two windows with that shape: refuse")
 check(WindowMatcher.pick(thumbnailTitle: "Nothing", from: [w("Else")]) == .none, "no match")
 check(WindowMatcher.pick(thumbnailTitle: "   ", from: [w("")]) == .none, "blank thumbnail title")
 check(WindowMatcher.pick(thumbnailTitle: " Notes ", from: [w("Notes")]) == .match(0), "whitespace trimmed")

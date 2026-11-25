@@ -1,0 +1,21 @@
+# MC Close
+> Mission Control on a Mac has no close buttons. MC Close adds close, minimize, full-screen and zoom buttons to every window in Mission Control, and shortcuts like ⌘W.
+
+MC Close is a free, open-source (MIT) macOS menu-bar app. Open Mission Control (F3, Control-↑, or a three- or four-finger swipe up) and each window's own title-bar controls light up in its thumbnail: close, minimize, full screen, and zoom (fill the screen without a separate space, like Option-clicking the green button). Point at a window and press ⌘W to close it, ⌘M to minimize, ⌃⌘F for full screen, ⌥⌘F to zoom, ⌘H to hide its app or ⌘Q to quit its app. In Settings you can choose which buttons appear, their order, and their colours (Match System, Multicolor, Graphite or an accent colour).
+
+- Works on macOS 13 Ventura or later, including macOS 27, where Apple moved Mission Control into WindowManager. Apple silicon and Intel.
+- Needs Accessibility permission. Only listens to the keyboard and mouse while Mission Control is open.
+- If two windows could match a thumbnail, it does nothing rather than close the wrong one.
+- Sends nothing about the user; checks GitHub once a month for a new version.
+- Not made by or affiliated with Apple.
+
+## Install
+curl -fsSL https://github.com/anujbajaj4/fixing_macos/releases/latest/download/install.sh | bash
+
+Or download MCClose.dmg from https://github.com/anujbajaj4/fixing_macos/releases/latest
+
+## Links
+- [Website](https://anujbajaj4.github.io/fixing_macos/)
+- [README](https://github.com/anujbajaj4/fixing_macos#readme): set-up, troubleshooting, building
+- [Releases](https://github.com/anujbajaj4/fixing_macos/releases)
+- [Questions](https://anujbajaj4.github.io/fixing_macos/#faq)

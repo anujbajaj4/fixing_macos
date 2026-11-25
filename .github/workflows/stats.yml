@@ -1,0 +1,44 @@
+name: Download stats
+
+# Once a day, record each release's download count on the `stats` branch
+# (downloads.csv and a README summary), so growth can be seen over time.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: app
+      - name: Record today's download counts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git clone --quiet --branch stats --depth 1 "$remote" stats 2>/dev/null; then :; else
+            mkdir stats && git -C stats init -q -b stats && git -C stats remote add origin "$remote"
+          fi
+          cd stats
+          [ -f downloads.csv ] || echo "date,version,dmg,installer" > downloads.csv
+          today=$(date -u +%F)
+          grep -v "^${today}," downloads.csv > rows.tmp || true   # a re-run replaces today's rows
+          mv rows.tmp downloads.csv
+          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[] |
+            [.tag_name,
+             ([.assets[] | select(.name == "MCClose.dmg") | .download_count] | add // 0),
+             ([.assets[] | select(.name == "install.sh") | .download_count] | add // 0)] | @csv' \
+            | tr -d '"' | sed "s/^/${today},/" >> downloads.csv
+          python3 ../app/scripts/stats_summary.py downloads.csv > README.md
+          cat README.md
+          git add downloads.csv README.md
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Download counts for ${today}" || echo "No change today."
+          git push -q origin stats

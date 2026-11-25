@@ -1,6 +1,7 @@
 Control any window right from Mission Control: point at it, then use the buttons on its corner or a shortcut.
 
 ## What's new in 1.4.0
+- **Buttons that work on more windows.** Some windows on macOS 27 (seen with Preview) are labelled slightly differently in Mission Control, so their buttons did nothing. MC Close now compares titles more loosely and, within an app, uses the window's shape to find the right one. It still does nothing if it isn't sure.
 - **Updates keep your Accessibility permission.** From this version on, every release is signed with the same certificate, so macOS recognises updates as the same app. (Updating to 1.4.0 itself asks once more.)
 - **Buttons ride with the windows.** As Mission Control opens, each window's buttons travel from its real controls to its thumbnail; as it closes, they travel back and fade. Turn this off in Settings ("Move buttons with the windows"); MC Close also follows Reduce motion.
 - **Choose your buttons.** In Settings ▸ Buttons, tick the ones you want and drag them into any order: Close, Minimize, Full Screen, Zoom, and now also Hide App and Quit App.

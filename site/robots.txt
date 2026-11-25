@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://anujbajaj4.github.io/fixing_macos/sitemap.xml
