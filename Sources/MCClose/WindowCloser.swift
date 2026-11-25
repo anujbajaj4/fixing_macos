@@ -68,9 +68,10 @@ enum AX {
 
 /// A window thumbnail as the Dock exposes it during Mission Control.
 struct Thumbnail {
-    let element: AXUIElement   // the Dock's AXButton for this window
+    let element: AXUIElement   // the Dock's (or, on macOS 27, WindowManager's) AXButton for this window
     let title: String
     let frame: CGRect   // top-left–origin global coordinates
+    var appBundleID: String? = nil   // macOS 27 tells us the app in the thumbnail's identifier
 }
 
 enum WindowCloser {
@@ -90,21 +91,21 @@ enum WindowCloser {
     /// Mission Control that looks straight through the thumbnails and returns the real
     /// window underneath (seen on macOS 15), so we list the thumbnails and hit-test ourselves.
     static func missionControlThumbnails() -> [Thumbnail] {
-        guard let dockPID else { return [] }
-        let dock = AXUIElementCreateApplication(dockPID)
-        AXUIElementSetMessagingTimeout(dock, 0.25)
         var found: [Thumbnail] = []
 
         func walk(_ el: AXUIElement, depth: Int, ancestors: [String]) {
             guard depth < 8, found.count < 300 else { return }
             let role = AX.string(el, kAXRoleAttribute) ?? ""
             if depth > 0 && ThumbnailFilter.isBoundary(role: role) { return }   // the Dock's icon row
+            let identifier = AX.string(el, kAXIdentifierAttribute) ?? ""
+            if MissionControl27.isSpacesElement(identifier: identifier) { return }   // desktops strip (macOS 27)
             let title = AX.string(el, kAXTitleAttribute) ?? ""
-            if title == "Spaces Bar" { return }
+            if title == "Spaces Bar" { return }                                         // desktops strip (macOS 15)
             if depth > 0, !title.isEmpty,
-               ThumbnailFilter.isWindowThumbnail(role: role, ancestorTitles: ancestors),
+               ThumbnailFilter.isWindowThumbnail(role: role, ancestorTitles: ancestors, identifier: identifier),
                let frame = AX.frame(el), frame.width > 20, frame.height > 20 {
-                found.append(Thumbnail(element: el, title: title, frame: frame))
+                found.append(Thumbnail(element: el, title: title, frame: frame,
+                                       appBundleID: MissionControl27.bundleID(fromThumbnailIdentifier: identifier)))
                 return   // nothing to find inside a thumbnail
             }
             let next = title.isEmpty ? ancestors : [title] + ancestors
@@ -112,8 +113,30 @@ enum WindowCloser {
                 walk(child, depth: depth + 1, ancestors: next)
             }
         }
-        walk(dock, depth: 0, ancestors: [])
+
+        // macOS 15 and earlier: Mission Control lives in the Dock.
+        if let dockPID {
+            let dock = AXUIElementCreateApplication(dockPID)
+            AXUIElementSetMessagingTimeout(dock, 0.25)
+            walk(dock, depth: 0, ancestors: [])
+        }
+        // macOS 27: in WindowManager, one "mc.display" group per display. Only those groups
+        // are searched, so Stage Manager's own buttons never count.
+        for group in missionControlDisplayGroups() {
+            walk(group, depth: 1, ancestors: [])
+        }
         return found
+    }
+
+    /// WindowManager's "mc.display" groups (present only while Mission Control is open, macOS 27).
+    static func missionControlDisplayGroups() -> [AXUIElement] {
+        guard let pid = NSRunningApplication.runningApplications(
+            withBundleIdentifier: MissionControl27.windowManagerBundleID).first?.processIdentifier else { return [] }
+        let wm = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(wm, 0.25)
+        return AX.elements(wm, kAXChildrenAttribute).filter {
+            MissionControl27.isDisplayGroup(identifier: AX.string($0, kAXIdentifierAttribute) ?? "")
+        }
     }
 
     /// The thumbnail in `thumbnails` under `point`, if any.
@@ -129,7 +152,12 @@ enum WindowCloser {
         var windows: [AXUIElement] = []
         var candidates: [WindowCandidate] = []
 
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+        // macOS 27 thumbnails name their app: look only at that app's windows (fall back to
+        // all apps if that finds none).
+        let allApps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+        let ownApp = allApps.filter { thumb.appBundleID != nil && $0.bundleIdentifier == thumb.appBundleID }
+        if !ownApp.isEmpty { trace?("thumbnail belongs to \(thumb.appBundleID ?? "?")") }
+        for app in (ownApp.isEmpty ? allApps : ownApp) {
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(appElement, 0.3) // don't hang on a frozen app
             let appName = app.localizedName ?? ""

@@ -1,9 +1,10 @@
 Control any window right from Mission Control: point at it, then use the buttons on its corner or a shortcut.
 
-## What's new in 1.1.1
-- **No more lag, ever, from MC Close.** MC Close now only listens to the keyboard and mouse while Mission Control is open; the rest of the time it isn't in the path at all. In 1.0.0, updating could leave the old copy stalled in that path for minutes, which slowed down every click and key press. Updating now switches that off and quits the old copy before installing the new one, and the Update button only runs once.
-- **Better diagnosis for new macOS versions.** On macOS 27 Mission Control isn't drawn by the Dock any more, so MC Close can't see it yet. **Diagnose Mission Control…** now records which part of macOS draws it, so the next version can support it.
-- Updating no longer fills the log with "event tap was disabled" lines from the old copy.
+## What's new in 1.2.0
+- **Works on macOS 27.** Apple moved Mission Control out of the Dock into a part of macOS called WindowManager, and stopped announcing when it opens, so earlier versions never showed their buttons there. MC Close now finds Mission Control and its windows in WindowManager (and still in the Dock on older macOS).
+- **Picks the right window more reliably on macOS 27,** which tells MC Close which app each window belongs to.
+- **No more lag, ever, from MC Close.** It only listens to the keyboard and mouse while Mission Control is open; the rest of the time it isn't in the path at all. In 1.0.0, updating could leave the old copy stalled in that path for minutes, slowing every click and key press. Updating now switches that off and quits the old copy first, and the Update button only runs once.
+- **Diagnose Mission Control…** records far more (which part of macOS draws Mission Control, and what's under the pointer), still without window titles.
 
 ## In 1.1.0
 - **Four buttons on the window you point at:** close, minimize, full screen, and zoom (+). Zoom does what Option-clicking the green button does: the window fills the screen in place, without a separate full-screen space. Zoom again to put it back.

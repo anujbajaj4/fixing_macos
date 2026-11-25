@@ -48,6 +48,22 @@ check(ThumbnailFilter.isBoundary(role: "AXDockItem") && !ThumbnailFilter.isBound
       "walking up stops at Dock items")
 check(!ThumbnailFilter.isBoundary(role: "AXGroup"), "walking up passes through untitled groups")
 
+// MARK: macOS 27 (Mission Control in WindowManager)
+check(MissionControl27.bundleID(fromThumbnailIdentifier: "com.apple.TextEdit.space.3") == "com.apple.TextEdit",
+      "macOS 27 thumbnail id gives the app")
+check(MissionControl27.bundleID(fromThumbnailIdentifier: "com.mitchellh.ghostty.space.12") == "com.mitchellh.ghostty",
+      "…with multi-digit space numbers")
+check(MissionControl27.bundleID(fromThumbnailIdentifier: "mc.spaces.add") == nil, "spaces controls aren't apps")
+check(MissionControl27.bundleID(fromThumbnailIdentifier: "com.apple.TextEdit.space.") == nil, "missing space number")
+check(MissionControl27.bundleID(fromThumbnailIdentifier: "") == nil, "no identifier")
+check(MissionControl27.isDisplayGroup(identifier: "mc.display") && !MissionControl27.isDisplayGroup(identifier: "mc.spaces"),
+      "mc.display marks Mission Control on macOS 27")
+check(MissionControl27.isSpacesElement(identifier: "mc.spaces.list"), "desktops strip is skipped")
+check(ThumbnailFilter.isWindowThumbnail(role: "AXButton", ancestorTitles: [], identifier: "com.apple.TextEdit.space.1"),
+      "macOS 27 window thumbnail is a target")
+check(!ThumbnailFilter.isWindowThumbnail(role: "AXButton", ancestorTitles: [], identifier: "mc.spaces.add"),
+      "macOS 27 add-desktop button is not a target")
+
 // MARK: MissionControlLayout (backup detection)
 let screens = [CGRect(x: 0, y: 0, width: 1024, height: 768), CGRect(x: 1024, y: 0, width: 1920, height: 1080)]
 check(MissionControlLayout.looksOpen(dockElements: [("AXList", CGRect(x: 0, y: 700, width: 900, height: 60)),

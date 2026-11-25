@@ -83,8 +83,33 @@ enum ThumbnailFilter {
     /// (Untitled groups are walked through; titled ones are rejected by isWindowThumbnail.)
     static func isBoundary(role: String) -> Bool { ["AXApplication", "AXDockItem", "AXList"].contains(role) }
 
-    static func isWindowThumbnail(role: String, ancestorTitles: [String]) -> Bool {
+    static func isWindowThumbnail(role: String, ancestorTitles: [String], identifier: String = "") -> Bool {
         !excludedRoles.contains(role) && !ancestorTitles.contains("Spaces Bar")
+            && !identifier.hasPrefix("mc.")   // macOS 27: mc.spaces.add and other controls
+    }
+}
+
+/// Mission Control on macOS 27 (reported by Hammerspoon, Glide and PaperWM developers):
+/// its accessibility tree moved from the Dock to WindowManager (com.apple.WindowManager).
+/// While it's open, WindowManager has an AXGroup "mc.display" per display; each window
+/// thumbnail is an AXButton in it, titled with the window title, with the identifier
+/// "<app bundle id>.space.<n>". Desktops sit under "mc.spaces". The Dock no longer posts
+/// its Mission Control notifications (and on 27.2.1 has no Mission Control group at all).
+enum MissionControl27 {
+    static let windowManagerBundleID = "com.apple.WindowManager"
+
+    static func isDisplayGroup(identifier: String) -> Bool { identifier == "mc.display" }
+
+    /// The desktops strip and its controls: never window thumbnails.
+    static func isSpacesElement(identifier: String) -> Bool { identifier.hasPrefix("mc.spaces") }
+
+    /// "com.apple.TextEdit.space.3" → "com.apple.TextEdit"; nil for anything else.
+    static func bundleID(fromThumbnailIdentifier id: String) -> String? {
+        guard let r = id.range(of: ".space.", options: .backwards) else { return nil }
+        let bundle = String(id[..<r.lowerBound])
+        let number = id[r.upperBound...]
+        guard !bundle.isEmpty, !bundle.hasPrefix("mc."), !number.isEmpty, number.allSatisfy(\.isNumber) else { return nil }
+        return bundle
     }
 }
 

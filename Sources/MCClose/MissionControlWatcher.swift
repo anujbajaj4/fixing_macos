@@ -6,7 +6,8 @@ import ApplicationServices
 /// Mission Control is drawn by the Dock process. The Dock posts (undocumented) accessibility
 /// notifications when it enters and leaves Mission Control, so we subscribe to those.
 /// Not every macOS sends them (none arrived on a user's macOS 27), so as a backup we also
-/// look at the Dock's layout about 3 times a second: a few cheap AX queries.
+/// look about 3 times a second (a few cheap AX queries) at the Dock's layout and, for
+/// macOS 27, where Mission Control moved, at WindowManager's "mc.display" groups.
 final class MissionControlWatcher {
     private(set) var isActive = false
     var onChange: ((Bool) -> Void)?
@@ -106,12 +107,13 @@ final class MissionControlWatcher {
     /// The backup check. It only opens what it can see, and only closes what it opened,
     /// so it never fights the Dock's own notifications.
     private func poll() {
-        guard dockPID != 0 else { return }
-        let open = Self.dockLooksLikeMissionControl(pid: dockPID)
+        let inDock = dockPID != 0 && Self.dockLooksLikeMissionControl(pid: dockPID)
+        let inWindowManager = !inDock && !WindowCloser.missionControlDisplayGroups().isEmpty   // macOS 27
+        let open = inDock || inWindowManager
         if open && !isActive {
-            Log.write("Dock layout shows Mission Control (no notification from the Dock)")
+            Log.write("\(inDock ? "Dock layout" : "WindowManager") shows Mission Control (no notification from the Dock)")
             activeByPoll = true
-            lastSource = "layout"
+            lastSource = inDock ? "Dock layout" : "WindowManager (macOS 27)"
             setActive(true)
         } else if !open && isActive && activeByPoll {
             Log.write("Dock layout shows Mission Control closed")

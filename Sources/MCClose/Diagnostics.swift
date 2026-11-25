@@ -49,6 +49,12 @@ enum Diagnostics {
             lines.append("  Dock layout check says: \(MissionControlWatcher.dockLooksLikeMissionControl(pid: pid) ? "open" : "closed")")
             lines += dockTree(pid: pid)
         }
+        // macOS 27 moved Mission Control to WindowManager.
+        let groups = WindowCloser.missionControlDisplayGroups()
+        lines.append("  WindowManager: \(groups.count) Mission Control display group(s)")
+        if let wm = NSRunningApplication.runningApplications(withBundleIdentifier: MissionControl27.windowManagerBundleID).first {
+            lines += SystemProbe.axTree(pid: wm.processIdentifier, maxLines: 60).map { "  " + $0 }
+        }
         // Which process draws Mission Control on this macOS? (On macOS 15 it's the Dock.)
         let windows = SystemProbe.windows()
         lines.append("  on-screen windows (owner, pid, layer, frame); normal app windows only counted:")
@@ -167,7 +173,8 @@ enum SystemProbe {
             guard depth <= 7, out.count < maxLines else { return }
             let children = AX.elements(el, kAXChildrenAttribute)
             let frame = AX.frame(el).map { " \(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" } ?? ""
-            out.append(String(repeating: "  ", count: depth + 1) + AX.describe(el) + frame + " children=\(children.count)")
+            let ident = AX.string(el, kAXIdentifierAttribute).map { " id=\($0)" } ?? ""
+            out.append(String(repeating: "  ", count: depth + 1) + AX.describe(el) + ident + frame + " children=\(children.count)")
             for c in children { walk(c, depth + 1) }
         }
         walk(root, 0)
