@@ -38,7 +38,7 @@ jobs:
           cp install.sh _site/install.sh
           gh release download --repo "$GITHUB_REPOSITORY" --pattern MCClose.dmg --dir _site
           ls -la _site
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
       - id: deploy
