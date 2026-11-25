@@ -48,6 +48,23 @@ enum WindowMatcher {
     }
 }
 
+/// Which titled Dock elements in Mission Control are window thumbnails.
+/// Seen on macOS 15: thumbnails are AXButton titled with the window's title, inside an
+/// AXGroup "Mission Control". Other titled things must never be targets: Dock icons
+/// (AXDockItem "Finder" would loosely match an untitled Finder window), the full-screen
+/// "Mission Control" group, the Dock app itself, and the Spaces Bar's desktops.
+enum ThumbnailFilter {
+    static let excludedRoles: Set<String> = ["AXApplication", "AXGroup", "AXDockItem", "AXWindow", "AXList"]
+
+    /// Stop walking up the moment we reach one of these: the pointer isn't on a thumbnail.
+    /// (Untitled groups are walked through; titled ones are rejected by isWindowThumbnail.)
+    static func isBoundary(role: String) -> Bool { ["AXApplication", "AXDockItem", "AXList"].contains(role) }
+
+    static func isWindowThumbnail(role: String, ancestorTitles: [String]) -> Bool {
+        !excludedRoles.contains(role) && !ancestorTitles.contains("Spaces Bar")
+    }
+}
+
 enum Geometry {
     /// Accessibility frames use a top-left origin on the main display; AppKit
     /// windows use a bottom-left origin. Convert an AX rect to an AppKit rect.

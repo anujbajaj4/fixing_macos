@@ -35,6 +35,19 @@ check(WindowMatcher.pick(thumbnailTitle: " Notes ", from: [w("Notes")]) == .matc
 check(WindowMatcher.pick(thumbnailTitle: "Finder", from: [w("", "")]) == .none,
       "untitled window of nameless app doesn't match")
 
+// MARK: ThumbnailFilter (shapes seen in Mission Control on macOS 15)
+check(ThumbnailFilter.isWindowThumbnail(role: "AXButton", ancestorTitles: ["Mission Control", "Dock"]),
+      "window thumbnail is a target")
+check(!ThumbnailFilter.isWindowThumbnail(role: "AXDockItem", ancestorTitles: ["Dock"]),
+      "Dock icon is never a target")
+check(!ThumbnailFilter.isWindowThumbnail(role: "AXGroup", ancestorTitles: ["Dock"]),
+      "the Mission Control group itself is not a target")
+check(!ThumbnailFilter.isWindowThumbnail(role: "AXButton", ancestorTitles: ["Spaces Bar", "Mission Control", "Dock"]),
+      "desktops in the Spaces Bar are not targets")
+check(ThumbnailFilter.isBoundary(role: "AXDockItem") && !ThumbnailFilter.isBoundary(role: "AXButton"),
+      "walking up stops at Dock items")
+check(!ThumbnailFilter.isBoundary(role: "AXGroup"), "walking up passes through untitled groups")
+
 // MARK: Geometry
 let ax = CGRect(x: 100, y: 50, width: 24, height: 24)
 check(Geometry.appKitRect(fromAX: ax, mainScreenHeight: 1000) == CGRect(x: 100, y: 926, width: 24, height: 24),

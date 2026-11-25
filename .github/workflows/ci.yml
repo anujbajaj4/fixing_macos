@@ -76,8 +76,11 @@ jobs:
           set -uo pipefail
           mkdir -p "$RUNNER_TEMP/shots"
           xcrun swiftc Tests/e2e.swift -o build/e2e
-          open "$RUNNER_TEMP/Applications/MCClose.app"
+          # Started from this shell (not with `open`) so it inherits the runner's
+          # Accessibility grant; on a real Mac the user grants it in System Settings.
+          "$RUNNER_TEMP/Applications/MCClose.app/Contents/MacOS/MCClose" > "$RUNNER_TEMP/e2e-app.txt" 2>&1 &
           sleep 3
+          tail -5 ~/Library/Logs/MCClose.log
           build/e2e "$RUNNER_TEMP/shots"
 
       - name: Upload the build and screenshots

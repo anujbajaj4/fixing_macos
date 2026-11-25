@@ -22,7 +22,13 @@ func sh(_ cmd: String) {
     let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/bash"); p.arguments = ["-c", cmd]
     try? p.run(); p.waitUntilExit()
 }
-func shot(_ name: String) { sh("screencapture -x '\(shots)/\(name).png' 2>/dev/null") }
+func shot(_ name: String, inline: Bool = false) {
+    sh("screencapture -x '\(shots)/\(name).png' 2>/dev/null")
+    // A small copy in the log, for reviewers who can't download artifacts.
+    if inline {
+        sh("sips -Z 800 -s format jpeg -s formatOptions 60 '\(shots)/\(name).png' --out '\(shots)/\(name).jpg' >/dev/null 2>&1 && echo \"SCREENSHOT \(name) $(base64 -i '\(shots)/\(name).jpg' | tr -d '\\n')\"")
+    }
+}
 func logText() -> String { (try? String(contentsOf: logURL, encoding: .utf8)) ?? "" }
 
 func attr<T>(_ el: AXUIElement, _ a: String) -> T? {
@@ -85,7 +91,7 @@ func key(_ code: CGKeyCode, command: Bool = false) {
 }
 func center(_ r: CGRect) -> CGPoint { CGPoint(x: r.midX, y: r.midY) }
 func thumbnail(_ name: String) -> CGRect? {
-    dockElements().first { $0.title.contains(name) && $0.frame.width > 40 }?.frame
+    dockElements().first { $0.role == "AXButton" && $0.title.contains(name) && $0.frame.width > 40 }?.frame
 }
 
 // MARK: - Setup
@@ -134,7 +140,7 @@ for e in elements.prefix(60) {
 if let alpha = thumbnail("e2e-alpha") {
     move(to: center(alpha)); wait(0.6)
     let ov = overlayFrames()
-    shot("3-hover-alpha")
+    shot("3-hover-alpha", inline: true)
     ok(!ov.isEmpty, "✕ button appears when hovering a thumbnail")
     if let b = ov.first {
         ok(abs(b.midX - alpha.minX) < 3 && abs(b.midY - alpha.minY) < 3,
@@ -165,6 +171,12 @@ if let beta = thumbnail("e2e-beta") {
     }
 } else {
     ok(false, "found beta's thumbnail in Mission Control")
+}
+
+// MARK: Dock icons are not targets
+if let dockIcon = dockElements().first(where: { $0.role == "AXDockItem" && $0.title == "TextEdit" }) {
+    move(to: center(dockIcon.frame)); wait(0.6)
+    ok(overlayFrames().isEmpty, "no ✕ on a Dock icon in Mission Control")
 }
 
 // MARK: leaving Mission Control

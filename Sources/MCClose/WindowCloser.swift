@@ -105,14 +105,34 @@ enum WindowCloser {
         // The hit element may be a child of the thumbnail; walk up to the one with a title.
         for level in 0..<4 {
             trace?("level \(level): \(AX.describe(el))")
+            let role = AX.string(el, kAXRoleAttribute) ?? ""
+            if ThumbnailFilter.isBoundary(role: role) {
+                trace?("not a window thumbnail (\(role))")
+                return nil
+            }
             if let title = AX.string(el, kAXTitleAttribute), !title.isEmpty,
                let frame = AX.frame(el) {
+                guard ThumbnailFilter.isWindowThumbnail(role: role, ancestorTitles: ancestorTitles(of: el)) else {
+                    trace?("not a window thumbnail (Spaces Bar)")
+                    return nil
+                }
                 return Thumbnail(element: el, title: title, frame: frame)
             }
             guard let parent = AX.element(el, kAXParentAttribute) else { break }
             el = parent
         }
         return nil
+    }
+
+    private static func ancestorTitles(of el: AXUIElement) -> [String] {
+        var titles: [String] = []
+        var current = el
+        for _ in 0..<6 {
+            guard let parent = AX.element(current, kAXParentAttribute) else { break }
+            if let t = AX.string(parent, kAXTitleAttribute), !t.isEmpty { titles.append(t) }
+            current = parent
+        }
+        return titles
     }
 
     /// Match a thumbnail to the app's real window by title.
