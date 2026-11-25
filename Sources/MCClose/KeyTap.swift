@@ -12,6 +12,8 @@ final class KeyTap {
     var isActive: () -> Bool = { false }
     /// Is the pointer on a window thumbnail right now?
     var isPointerOnThumbnail: () -> Bool = { false }
+    /// Whether a shortcut is switched on in Settings.
+    var isShortcutEnabled: (WindowAction) -> Bool = { _ in true }
     /// Called on the main thread for a shortcut.
     var onShortcut: (WindowAction) -> Void = { _ in }
     /// The window button at this point (AX / event coordinates), if any; the Bool is
@@ -72,6 +74,7 @@ final class KeyTap {
                 if me.isActive(),
                    let action = Shortcut.action(keycode: event.getIntegerValueField(.keyboardEventKeycode),
                                                 flags: event.flags.rawValue),
+                   me.isShortcutEnabled(action),
                    me.isPointerOnThumbnail() {
                     // Held-down keys repeat: swallow the repeats, act once.
                     if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {

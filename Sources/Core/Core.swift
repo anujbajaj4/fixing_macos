@@ -253,6 +253,31 @@ enum ButtonLayout {
     }
 }
 
+/// Moving the buttons with the windows as Mission Control opens and closes: they start on
+/// each window's real controls and ride to its thumbnail (and back on the way out).
+enum Motion {
+    static let duration: Double = 0.32     // about as long as Mission Control's own animation
+
+    /// Fast start, gentle stop, like macOS's own motion.
+    static func easeOut(_ t: Double) -> Double {
+        let x = min(max(t, 0), 1)
+        return 1 - pow(1 - x, 3)
+    }
+
+    static func lerp(_ a: CGRect, _ b: CGRect, _ t: Double) -> CGRect {
+        let k = CGFloat(t)
+        return CGRect(x: a.minX + (b.minX - a.minX) * k, y: a.minY + (b.minY - a.minY) * k,
+                      width: a.width + (b.width - a.width) * k, height: a.height + (b.height - a.height) * k)
+    }
+
+    /// One row of buttons part-way between where it starts and where it ends.
+    static func row(from a: [CGRect], to b: [CGRect], progress t: Double) -> [CGRect] {
+        guard a.count == b.count else { return b }
+        let e = easeOut(t)
+        return zip(a, b).map { lerp($0, $1, e) }
+    }
+}
+
 /// The colours of the window buttons, mirroring macOS's accent colour choices
 /// (System Settings ▸ Appearance). With the Graphite accent, macOS draws window controls
 /// grey; with any other accent they stay red, yellow and green.
@@ -328,6 +353,18 @@ enum Shortcut {
         case (keyH, command): return .hideApp
         case (keyQ, command): return .quitApp
         default: return nil
+        }
+    }
+
+    /// The keys for an action, as shown in Settings.
+    static func keys(for action: WindowAction) -> String {
+        switch action {
+        case .close: return "⌘W"
+        case .minimize: return "⌘M"
+        case .fullScreen: return "⌃⌘F"
+        case .zoom: return "⌥⌘F"
+        case .hideApp: return "⌘H"
+        case .quitApp: return "⌘Q"
         }
     }
 

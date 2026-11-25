@@ -112,25 +112,45 @@ private final class ScreenLayer {
 }
 
 /// Shows window buttons on every window thumbnail while Mission Control is open, and keeps
-/// track of the thumbnails (the keyboard shortcuts use them too).
+/// track of the thumbnails (the keyboard shortcuts use them too). The buttons ride with the
+/// windows: as Mission Control opens they travel from each window's real controls to its
+/// thumbnail, and as it closes they travel back and fade. Mission Control is read on a
+/// background queue, so the main thread (and the keyboard/mouse handling on it) stays free.
 final class WindowButtonsOverlay: NSObject {
+    private struct Verdict { var ok: Bool; var native: NativeControls?; var windowFrame: CGRect? }
+
     private var panels: [ScreenLayer] = []
     private var timer: Timer?
+    private let reader = DispatchQueue(label: "MCClose.thumbnails", qos: .userInteractive)
+    private var reading = false
+    private var lastRead = Date.distantPast
+    private var openedAt = Date.distantPast
+    private var leaving: (start: Date, from: [[CGRect]], to: [[CGRect]])?
+
     private var thumbnails: [Thumbnail] = []        // the ones that get buttons
-    private var rows: [[CGRect]] = []               // their buttons, AX coordinates
-    private var previousFrames: [CGRect] = []
-    private var thumbnailsRead = Date.distantPast
+    private var targets: [[CGRect]] = []            // their rows on the thumbnails (AX coordinates)
+    private var homes: [[CGRect]] = []              // the same rows on the real windows
+    private var ridesIn: [Bool] = []                // seen at the start, so they travel in
+    private var drawn: [[CGRect]] = []              // what's on screen now
+    private var firstSeen: [String: Date] = [:]
+    /// Does a thumbnail (by app + title) have exactly one real, visible window behind it, and
+    /// where are that window and its own controls? Kept between visits so the buttons are
+    /// ready at once, and checked again (off the main thread) on every visit.
+    private var verdicts: [String: Verdict] = [:]
+    private var rechecked: Set<String> = []
+    private var checking = false
     private var shown = false
     private var loggedOnce = false
-    /// Does a thumbnail (by app + title) have exactly one real, visible window behind it, and
-    /// where are that window's own controls? Checked off the main thread; no buttons until yes.
-    private var verdicts: [String: (ok: Bool, native: NativeControls?)] = [:]
-    private var checking = false
     private var logged: Set<String> = []
     /// The button pressed in the event tap, waiting for `perform` on the main thread.
     private var armed: (action: WindowAction, thumbnail: Thumbnail)?
 
-    /// Turned off from the menu if someone only wants the shortcuts.
+    /// No riding in and out: turned off in Settings, or macOS's Reduce motion is on.
+    private var reduceMotion: Bool {
+        !AppState.moveWithWindows || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    /// Turned off in Settings if someone only wants the shortcuts.
     var showButtons: Bool {
         get { !UserDefaults.standard.bool(forKey: "HideCloseButton") }
         set {
@@ -139,48 +159,60 @@ final class WindowButtonsOverlay: NSObject {
         }
     }
 
-    /// The chosen theme ("Match System" unless changed in the menu).
+    /// The chosen theme ("Match System" unless changed in Settings).
     var theme: ButtonTheme {
         get { ButtonTheme(rawValue: UserDefaults.standard.string(forKey: "ButtonTheme") ?? "") ?? .system }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "ButtonTheme"); applyTheme() }
     }
 
+    /// Mission Control opened.
     func start() {
         timer?.invalidate()
+        openedAt = Date()
+        leaving = nil
         loggedOnce = false
-        shown = false
-        verdicts = [:]          // windows may have changed since last time
         logged = []
-        previousFrames = []
+        rechecked = []
+        firstSeen = [:]
+        thumbnails = []; targets = []; homes = []; ridesIn = []; drawn = []
+        lastRead = .distantPast
+        shown = false
         buildPanels()
         applyTheme()
-        let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.update() }
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.update() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
+    }
+
+    /// Mission Control closed: the buttons ride back onto the real windows and fade.
+    func leave() {
+        guard timer != nil, leaving == nil else { return }
+        armed = nil
+        if reduceMotion || !shown || drawn.isEmpty { stop(); return }
+        leaving = (Date(), drawn, homes.count == drawn.count ? homes : drawn)
+        for p in panels { p.view.hoveredGroup = nil; p.view.pressed = nil }
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
-        thumbnails = []
-        rows = []
-        previousFrames = []
-        thumbnailsRead = .distantPast
+        leaving = nil
+        thumbnails = []; targets = []; homes = []; ridesIn = []; drawn = []
         armed = nil
-        hidePanels(animated: true)
+        hidePanels(animated: !reduceMotion)
     }
 
-    /// Is the pointer on a window thumbnail? Decides whether a shortcut is ours.
+    /// Is the pointer on a window thumbnail? Decides whether a shortcut is ours. Uses the
+    /// list read in the background (at most a fifth of a second old).
     func isPointerOnThumbnail() -> Bool {
-        guard timer != nil else { return false }
-        if Date().timeIntervalSince(thumbnailsRead) > 0.5 { refreshThumbnails() }
+        guard timer != nil, leaving == nil else { return false }
         return WindowCloser.thumbnail(at: WindowCloser.mouseLocation(), in: thumbnails) != nil
     }
 
     /// The button at `point` (AX coordinates), if one is showing there. Called by the event
     /// tap on mouse-down; remembers which window it belongs to for `perform`.
     func button(at point: CGPoint, optionHeld: Bool) -> WindowAction? {
-        guard timer != nil, shown, showButtons, let hit = ButtonLayout.hit(point, rows: rows),
+        guard timer != nil, leaving == nil, shown, showButtons, let hit = ButtonLayout.hit(point, rows: targets),
               hit.thumbnail < thumbnails.count, hit.button < WindowAction.buttons.count else { return nil }
         var action = WindowAction.buttons[hit.button]
         if action == .fullScreen && optionHeld { action = .zoom }   // Option-click green, as on a window
@@ -194,8 +226,8 @@ final class WindowButtonsOverlay: NSObject {
         self.armed = nil
         for p in panels { p.view.pressed = nil; p.view.needsDisplay = true }
         WindowCloser.perform(action, on: armed.thumbnail, via: "button")
-        verdicts[Self.key(armed.thumbnail)] = nil   // its size may have changed (zoom): measure again
-        thumbnailsRead = .distantPast                // the layout changes after a close or minimize
+        rechecked.remove(Self.key(armed.thumbnail))   // its size may have changed (zoom): measure again
+        lastRead = .distantPast                         // the layout changes after a close or minimize
     }
 
     // MARK: - Internals
@@ -213,14 +245,69 @@ final class WindowButtonsOverlay: NSObject {
 
     private static func key(_ t: Thumbnail) -> String { (t.appBundleID ?? "") + "\u{1}" + t.title }
 
-    /// Reads Mission Control's thumbnails and keeps only real windows: big enough, not
-    /// tucked inside another thumbnail, and matching exactly one window MC Close can act on.
-    private func refreshThumbnails() {
-        let all = WindowCloser.missionControlThumbnails()
-        thumbnailsRead = Date()
+    private func update() {
+        let now = Date()
+
+        if let l = leaving {
+            let p = now.timeIntervalSince(l.start) / Motion.duration
+            if p >= 1 { stop(); return }
+            drawn = zip(l.from, l.to).map { Motion.row(from: $0, to: $1, progress: p) }
+            push(drawn)
+            let fade = max(0, (p - 0.45) / 0.55)            // fade out over the second half
+            for layer in panels { layer.panel.alphaValue = CGFloat(1 - fade) }
+            return
+        }
+
+        // Read Mission Control in the background: often while it animates in, then 5 times a second.
+        let interval = now.timeIntervalSince(openedAt) < 0.8 ? 1.0 / 30 : 0.2
+        if !reading && now.timeIntervalSince(lastRead) > interval {
+            reading = true
+            reader.async { [weak self] in
+                let all = WindowCloser.missionControlThumbnails()
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.reading = false
+                    self.lastRead = Date()
+                    if self.timer != nil && self.leaving == nil { self.apply(all) }
+                }
+            }
+        }
+
+        // Rows seen at the start ride in from the real windows; later ones just appear.
+        let progress = now.timeIntervalSince(openedAt) / Motion.duration
+        drawn = targets.indices.map { i in
+            guard !reduceMotion, progress < 1, ridesIn[i], i < homes.count else { return targets[i] }
+            return Motion.row(from: homes[i], to: targets[i], progress: progress)
+        }
+        push(drawn)
+        if !shown && !drawn.isEmpty && showButtons { showPanels() }
+        if shown && drawn.isEmpty { hidePanels(animated: true) }
+
+        // Symbols appear while the pointer is over a window's buttons.
+        let mouse = WindowCloser.mouseLocation()
+        let hovered = targets.firstIndex { ButtonLayout.groupRect($0).contains(mouse) }
+        let option = NSEvent.modifierFlags.contains(.option)
+        for p in panels where p.view.hoveredGroup != hovered || p.view.optionHeld != option {
+            p.view.hoveredGroup = hovered
+            p.view.optionHeld = option
+            p.view.needsDisplay = true
+        }
+    }
+
+    private func push(_ rows: [[CGRect]]) {
+        for p in panels {
+            let local = rows.map { $0.map { convert($0, to: p.screen) } }
+            if p.view.rows != local { p.view.rows = local; p.view.needsDisplay = true }
+        }
+    }
+
+    /// Keeps only real windows: big enough, not tucked inside another thumbnail, and matching
+    /// exactly one window MC Close can act on.
+    private func apply(_ all: [Thumbnail]) {
+        let now = Date()
         let sanity = ThumbnailSanity.check(all.map(\.frame))
         var keep: [Thumbnail] = []
-        var unknown: [Thumbnail] = []
+        var toCheck: [Thumbnail] = []
         for (t, verdict) in zip(all, sanity) {
             let k = Self.key(t)
             if verdict != .keep {
@@ -229,34 +316,57 @@ final class WindowButtonsOverlay: NSObject {
                     + "\(Int(t.frame.width))x\(Int(t.frame.height)) at \(Int(t.frame.minX)),\(Int(t.frame.minY)))")
                 continue
             }
-            if let v = verdicts[k] {
-                if v.ok { var t = t; t.native = v.native; keep.append(t) }
-            } else {
-                unknown.append(t)
+            if !rechecked.contains(k) { toCheck.append(t) }
+            if let v = verdicts[k], v.ok {
+                var t = t
+                t.native = v.native
+                keep.append(t)
             }
         }
+        let count = WindowAction.buttons.count
         thumbnails = keep
-        rows = keep.map { ButtonLayout.rects(forThumbnail: $0.frame, count: WindowAction.buttons.count, native: $0.native) }
-        guard !unknown.isEmpty, !checking else { return }
+        targets = keep.map { ButtonLayout.rects(forThumbnail: $0.frame, count: count, native: $0.native) }
+        homes = keep.map { t in
+            let frame = verdicts[Self.key(t)]?.windowFrame ?? t.frame
+            return ButtonLayout.rects(forThumbnail: frame, count: count, native: t.native)
+        }
+        ridesIn = keep.map { t in
+            let seen = firstSeen[Self.key(t)] ?? now
+            firstSeen[Self.key(t)] = seen
+            return seen.timeIntervalSince(openedAt) < 0.15
+        }
+        if !loggedOnce && !keep.isEmpty {
+            loggedOnce = true
+            Log.write("overlay: buttons on \(keep.count) window thumbnails "
+                      + "(\(keep.filter { $0.native != nil }.count) placed over the window's own controls)")
+        }
+        verify(toCheck)
+    }
+
+    /// Checks thumbnails against the real windows, off the main thread.
+    private func verify(_ list: [Thumbnail]) {
+        guard !list.isEmpty, !checking else { return }
         checking = true
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        reader.async { [weak self] in
             let snap = WindowCloser.snapshot()
-            let results: [(String, Thumbnail, Bool, NativeControls?)] = unknown.map { t in
+            let results: [(String, Thumbnail, Verdict)] = list.map { t in
                 let window = WindowCloser.match(t, in: snap).window
-                return (Self.key(t), t, window != nil, window.flatMap(WindowCloser.nativeControls))
+                return (Self.key(t), t, Verdict(ok: window != nil,
+                                                native: window.flatMap(WindowCloser.nativeControls),
+                                                windowFrame: window.flatMap { AX.frame($0) }))
             }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.checking = false
-                guard self.timer != nil else { return }   // Mission Control closed meanwhile
-                for (k, t, ok, native) in results {
-                    self.verdicts[k] = (ok, native)
-                    if !ok {
+                for (k, t, v) in results {
+                    self.verdicts[k] = v
+                    self.rechecked.insert(k)
+                    if !v.ok {
                         self.logOnce(k + "nomatch", "overlay: no buttons for \(Log.title(t.title))"
                             + (t.appBundleID.map { " (\($0))" } ?? "") + ": no single visible window of a normal app has that title")
                     }
                 }
-                self.thumbnailsRead = .distantPast   // redraw with the answers
+                self.lastRead = .distantPast   // redraw with the answers
             }
         }
     }
@@ -265,37 +375,6 @@ final class WindowButtonsOverlay: NSObject {
         guard !logged.contains(key) else { return }
         logged.insert(key)
         Log.write(line)
-    }
-
-    private func update() {
-        if Date().timeIntervalSince(thumbnailsRead) > 0.2 {
-            refreshThumbnails()
-            let frames = thumbnails.map(\.frame)
-            // Mission Control animates its windows in; show the buttons once they've settled.
-            let settled = !frames.isEmpty && frames == previousFrames
-            previousFrames = frames
-            if !loggedOnce && !frames.isEmpty {
-                loggedOnce = true
-                let measured = thumbnails.filter { $0.native != nil }.count
-                Log.write("overlay: buttons on \(frames.count) window thumbnails (\(measured) placed over the window's own controls)")
-            }
-            if settled && !shown && showButtons { showPanels() }
-            if frames.isEmpty && shown { hidePanels(animated: true) }
-            for p in panels {
-                let local = rows.map { $0.map { convert($0, to: p.screen) } }
-                if p.view.rows != local { p.view.rows = local; p.view.needsDisplay = true }
-            }
-        }
-
-        // Symbols appear while the pointer is over a window's buttons.
-        let mouse = WindowCloser.mouseLocation()
-        let hovered = rows.firstIndex { ButtonLayout.groupRect($0).contains(mouse) }
-        let option = NSEvent.modifierFlags.contains(.option)
-        for p in panels where p.view.hoveredGroup != hovered || p.view.optionHeld != option {
-            p.view.hoveredGroup = hovered
-            p.view.optionHeld = option
-            p.view.needsDisplay = true
-        }
     }
 
     /// AX (global, top-left origin) to a screen's view (top-left origin).
@@ -330,9 +409,13 @@ final class WindowButtonsOverlay: NSObject {
         shown = true
         for p in panels {
             p.panel.orderFrontRegardless()
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.18
-                p.panel.animator().alphaValue = 1
+            if reduceMotion {
+                p.panel.alphaValue = 1
+            } else {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.12
+                    p.panel.animator().alphaValue = 1
+                }
             }
         }
     }

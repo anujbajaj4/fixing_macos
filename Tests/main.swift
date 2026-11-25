@@ -138,6 +138,17 @@ let nb = ButtonLayout.rects(forThumbnail: bigThumb, count: 4, native: native)
 check(abs(nb[0].width - 11.2) < 0.01 && abs((nb[1].midX - nb[0].midX) - 16) < 0.01 && abs(nb[2].midX - 48) < 0.01,
       "at a larger scale the buttons match the miniature controls exactly")
 
+// MARK: Motion (buttons ride with the windows)
+check(Motion.easeOut(0) == 0 && Motion.easeOut(1) == 1 && Motion.easeOut(2) == 1 && Motion.easeOut(-1) == 0, "easing starts at 0, ends at 1")
+check(Motion.easeOut(0.5) > 0.5, "ease-out moves fast first")
+let home = [CGRect(x: 1000, y: 500, width: 14, height: 14)]
+let there = [CGRect(x: 100, y: 100, width: 7, height: 7)]
+check(Motion.row(from: home, to: there, progress: 0) == home && Motion.row(from: home, to: there, progress: 1) == there,
+      "rows start on the real controls and end on the thumbnail")
+let mid = Motion.row(from: home, to: there, progress: 0.5)[0]
+check(mid.minX < 1000 && mid.minX > 100 && mid.width < 14 && mid.width > 7, "part-way, the row is between, shrinking")
+check(Motion.row(from: home + home, to: there, progress: 0.5) == there, "mismatched rows jump straight to the end")
+
 // MARK: ButtonTheme
 check(ButtonTheme.system.resolved(systemAccent: -1) == .graphite, "Match System on a Graphite Mac draws grey buttons")
 check(ButtonTheme.system.resolved(systemAccent: nil) == .multicolor, "Match System on a Multicolor Mac draws red, yellow, green")
@@ -168,6 +179,10 @@ check(Shortcut.action(keycode: 13, flags: cmd | Shortcut.option) == nil, "⌥⌘
 check(Shortcut.action(keycode: 4, flags: cmd | Shortcut.option) == nil, "⌥⌘H (hide others) passes through")
 check(Shortcut.action(keycode: 13, flags: 0) == nil, "plain W passes through")
 check(Shortcut.action(keycode: 0, flags: cmd) == nil, "⌘A passes through")
+check(WindowAction.allCases.allSatisfy { a in
+        let k = Shortcut.keys(for: a)
+        return Shortcut.summary.contains(k)
+      }, "Settings shows the same keys as the menu")
 check(WindowAction.quitApp.isAppAction && !WindowAction.close.isAppAction, "quit acts on the app, close on the window")
 
 print("\(count - failures)/\(count) passed")

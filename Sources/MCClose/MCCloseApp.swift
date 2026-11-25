@@ -31,16 +31,7 @@ struct MenuContent: View {
         if !state.trusted {
             Button("Set Up…") { AppDelegate.showWelcome() }
         }
-        Toggle("Show Window Buttons", isOn: Binding(get: { state.showCloseButton },
-                                                    set: { state.setShowCloseButton($0) }))
-        Picker("Button Colours", selection: Binding(get: { state.buttonTheme },
-                                                    set: { state.setButtonTheme($0) })) {
-            ForEach(ButtonTheme.allCases, id: \.self) { theme in
-                Text(theme.label).tag(theme)
-            }
-        }
-        Toggle("Start at Login", isOn: Binding(get: { state.startAtLogin },
-                                               set: { state.setStartAtLogin($0) }))
+        Button("Settings…") { AppDelegate.showSettings() }.keyboardShortcut(",")
         Divider()
         Button("Open Log") { NSWorkspace.shared.open(Log.url) }
         Button("Diagnose Mission Control…") { AppDelegate.diagnose() }
@@ -79,6 +70,25 @@ final class AppState: ObservableObject {
     func setButtonTheme(_ theme: ButtonTheme) {
         buttonTheme = theme
         onButtonThemeChange?(theme)
+    }
+
+    /// Buttons ride in and out with the windows (Settings ▸ "Move buttons with the windows").
+    static var moveWithWindows: Bool { UserDefaults.standard.object(forKey: "MoveWithWindows") as? Bool ?? true }
+    @Published var moveWithWindows = AppState.moveWithWindows
+
+    func setMoveWithWindows(_ on: Bool) {
+        moveWithWindows = on
+        UserDefaults.standard.set(on, forKey: "MoveWithWindows")
+    }
+
+    /// Shortcuts switched off in Settings.
+    @Published var disabledShortcuts = Set(UserDefaults.standard.stringArray(forKey: "DisabledShortcuts") ?? [])
+
+    func isShortcutEnabled(_ action: WindowAction) -> Bool { !disabledShortcuts.contains(action.rawValue) }
+
+    func setShortcut(_ action: WindowAction, enabled: Bool) {
+        if enabled { disabledShortcuts.remove(action.rawValue) } else { disabledShortcuts.insert(action.rawValue) }
+        UserDefaults.standard.set(Array(disabledShortcuts).sorted(), forKey: "DisabledShortcuts")
     }
 
     var headline: String {
@@ -255,6 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Shortcuts act only while Mission Control is open and the pointer is on a window.
         keyTap.isActive = { [weak self] in self?.watcher.isActive ?? false }
+        keyTap.isShortcutEnabled = { AppState.shared.isShortcutEnabled($0) }
         keyTap.isPointerOnThumbnail = { [weak self] in self?.overlay.isPointerOnThumbnail() ?? false }
         keyTap.onShortcut = { action in WindowCloser.performUnderMouse(action) }
         // Clicks on the buttons are caught by the tap: Mission Control would take them otherwise.
@@ -271,7 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppState.shared.missionControlOpen = active
             // Input handling is on only while Mission Control is open.
             self?.keyTap.setEnabled(active)
-            if active { self?.overlay.start() } else { self?.overlay.stop() }
+            if active { self?.overlay.start() } else { self?.overlay.leave() }
         }
         watcher.start()
     }
@@ -280,6 +291,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let d = current else { return }
         Diagnostics.run(watcherActive: { [weak d] in d?.watcher.isActive ?? false },
                         watcherSource: { [weak d] in d?.watcher.lastSource ?? "" })
+    }
+
+    static func showSettings() {
+        AppWindow.settings.show { close in SettingsView(state: AppState.shared, close: close) }
     }
 
     static func showWelcome() {
@@ -291,6 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 final class AppWindow {
     static let welcome = AppWindow(title: "Welcome to MC Close")
+    static let settings = AppWindow(title: "MC Close Settings")
     private let title: String
     private var window: NSWindow?
     init(title: String) { self.title = title }

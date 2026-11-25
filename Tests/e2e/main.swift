@@ -146,7 +146,7 @@ func looks(_ px: (r: Int, g: Int, b: Int)?, like b: Button) -> Bool {
     case .close:      return px.r > 200 && px.g < 140 && px.b < 140
     case .minimize:   return px.r > 200 && px.g > 140 && px.b < 120
     case .fullScreen: return px.g > 150 && px.r < 120 && px.b < 130
-    case .zoom:       return abs(px.r - px.b) < 25 && px.r > 120 && px.r < 200
+    case .zoom:       return abs(px.r - px.g) < 18 && abs(px.g - px.b) < 18 && px.r > 90 && px.r < 235   // light graphite
     }
 }
 

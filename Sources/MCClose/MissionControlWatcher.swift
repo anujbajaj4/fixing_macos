@@ -6,7 +6,7 @@ import ApplicationServices
 /// Mission Control is drawn by the Dock process. The Dock posts (undocumented) accessibility
 /// notifications when it enters and leaves Mission Control, so we subscribe to those.
 /// Not every macOS sends them (none arrived on a user's macOS 27), so as a backup we also
-/// look about 3 times a second (a few cheap AX queries) at the Dock's layout and, for
+/// look about 7 times a second (a few cheap AX queries, off the main thread) at the Dock's layout and, for
 /// macOS 27, where Mission Control moved, at WindowManager's "mc.display" groups.
 final class MissionControlWatcher {
     private(set) var isActive = false
@@ -30,7 +30,7 @@ final class MissionControlWatcher {
     func start() {
         attachToDock()
         if pollTimer == nil {
-            let t = Timer(timeInterval: 0.3, repeats: true) { [weak self] _ in self?.poll() }
+            let t = Timer(timeInterval: 0.15, repeats: true) { [weak self] _ in self?.poll() }
             RunLoop.main.add(t, forMode: .common)
             pollTimer = t
         }
@@ -106,9 +106,26 @@ final class MissionControlWatcher {
 
     /// The backup check. It only opens what it can see, and only closes what it opened,
     /// so it never fights the Dock's own notifications.
+    private let pollQueue = DispatchQueue(label: "MCClose.watcher", qos: .userInteractive)
+    private var polling = false
+
+    /// The accessibility queries run in the background; only the result comes to the main thread.
     private func poll() {
-        let inDock = dockPID != 0 && Self.dockLooksLikeMissionControl(pid: dockPID)
-        let inWindowManager = !inDock && !WindowCloser.missionControlDisplayGroups().isEmpty   // macOS 27
+        guard !polling else { return }
+        polling = true
+        let pid = dockPID
+        let screens = Self.screenRects()   // AppKit: read on the main thread
+        pollQueue.async { [weak self] in
+            let inDock = pid != 0 && Self.dockLooksLikeMissionControl(pid: pid, screens: screens)
+            let inWindowManager = !inDock && !WindowCloser.missionControlDisplayGroups().isEmpty   // macOS 27
+            DispatchQueue.main.async {
+                self?.polling = false
+                self?.applyPoll(inDock: inDock, inWindowManager: inWindowManager)
+            }
+        }
+    }
+
+    private func applyPoll(inDock: Bool, inWindowManager: Bool) {
         let open = inDock || inWindowManager
         if open && !isActive {
             Log.write("\(inDock ? "Dock layout" : "WindowManager") shows Mission Control (no notification from the Dock)")
@@ -123,7 +140,12 @@ final class MissionControlWatcher {
     }
 
     /// The Dock's top two levels: is there a group covering a whole screen?
-    static func dockLooksLikeMissionControl(pid: pid_t) -> Bool {
+    static func screenRects() -> [CGRect] {
+        let mainHeight = NSScreen.screens.first?.frame.height ?? 0
+        return NSScreen.screens.map { Geometry.axRect(fromAppKit: $0.frame, mainScreenHeight: mainHeight) }
+    }
+
+    static func dockLooksLikeMissionControl(pid: pid_t, screens: [CGRect]? = nil) -> Bool {
         let dock = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(dock, 0.1)
         var found: [(role: String, frame: CGRect)] = []
@@ -137,9 +159,7 @@ final class MissionControlWatcher {
                 }
             }
         }
-        let mainHeight = NSScreen.screens.first?.frame.height ?? 0
-        let screens = NSScreen.screens.map { Geometry.axRect(fromAppKit: $0.frame, mainScreenHeight: mainHeight) }
-        return MissionControlLayout.looksOpen(dockElements: found, screens: screens)
+        return MissionControlLayout.looksOpen(dockElements: found, screens: screens ?? screenRects())
     }
 
     private func setActive(_ active: Bool) {

@@ -33,6 +33,8 @@ fake pgrep     'exit 1'
 fake pkill     'true'
 fake osascript 'true'
 fake tccutil   'true'
+# codesign -dr - <app>: the fake reads the app's "designated requirement" from Contents/req.
+fake codesign  'for a in "$@"; do last=$a; done; [ -f "$last/Contents/req" ] && sed "s/^/designated => /" "$last/Contents/req"; true'
 
 run() {   # run the installer the way users do: piped into bash
     PATH="$bin:$PATH" MCCLOSE_DMG_URL="${DMG:-file://$work/MCClose.dmg}" \
@@ -50,7 +52,25 @@ grep -q "^hdiutil attach" "$log" && grep -q "^hdiutil detach" "$log" && ok "moun
 : > "$log"
 touch "$work/Applications/MCClose.app/stale-file"
 if run && [ ! -e "$work/Applications/MCClose.app/stale-file" ]; then ok "upgrade replaces the old app"; else bad "upgrade replace"; fi
-grep -q "^tccutil reset Accessibility io.github.anujbajaj4.MCClose" "$log" && ok "upgrade resets stale Accessibility entry" || bad "upgrade tccutil"
+grep -q "^tccutil reset Accessibility io.github.anujbajaj4.MCClose" "$log" && ok "unsigned upgrade resets stale Accessibility entry" || bad "upgrade tccutil"
+
+# Same certificate before and after: the permission carries over.
+mkdir -p "$work/signed/MCClose.app/Contents/MacOS"
+cp "$work/src/MCClose.app/Contents/MacOS/MCClose" "$work/signed/MCClose.app/Contents/MacOS/"
+echo 'identifier "io.github.anujbajaj4.MCClose" and certificate root = H"abc123"' > "$work/signed/MCClose.app/Contents/req"
+tar -C "$work/signed" -cf "$work/Signed.dmg" MCClose.app
+cp "$work/signed/MCClose.app/Contents/req" "$work/Applications/MCClose.app/Contents/req"
+: > "$log"
+DMG="file://$work/Signed.dmg" NO_OPEN=0 run
+if grep -q "^tccutil" "$log"; then bad "same certificate should keep the permission"; else ok "same certificate keeps the Accessibility permission"; fi
+grep -q "carries over" "$work/out.txt" && ok "says the permission carries over" || bad "carries-over message"
+
+# A different certificate (or an ad-hoc build) needs it again.
+echo 'cdhash H"0123"' > "$work/Applications/MCClose.app/Contents/req"
+: > "$log"
+DMG="file://$work/Signed.dmg" NO_OPEN=0 run
+grep -q "^tccutil reset" "$log" && ok "changed signature resets the permission" || bad "changed signature reset"
+grep -q "needs the permission again" "$work/out.txt" && ok "says the permission is needed again" || bad "needed-again message"
 
 : > "$log"
 NO_OPEN=0 run && grep -q "^open .*MCClose.app" "$log" && grep -q "Open Accessibility Settings" "$work/out.txt" \

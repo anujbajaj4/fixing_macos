@@ -20,6 +20,11 @@ cleanup() {
     [ -n "${tmp:-}" ] && rm -rf "${tmp}"
 }
 
+# What macOS ties the Accessibility permission to: the app's designated requirement.
+designated_requirement() {
+    codesign -dr - "$1" 2>&1 | sed -n 's/^designated => //p'
+}
+
 quit_running_app() {
     pgrep -xq MCClose || return 0
     say "Quitting the running MC Close…"
@@ -70,18 +75,30 @@ main() {
     fi
     mkdir -p "${apps}"
 
-    local upgrading=0
-    [ -d "${apps}/MCClose.app" ] && upgrading=1
+    local upgrading=0 old_req=""
+    if [ -d "${apps}/MCClose.app" ]; then
+        upgrading=1
+        old_req=$(designated_requirement "${apps}/MCClose.app")
+    fi
     quit_running_app
     rm -rf "${apps:?}/MCClose.app"
     ditto "${mnt}/MCClose.app" "${apps}/MCClose.app"
     xattr -dr com.apple.quarantine "${apps}/MCClose.app" 2>/dev/null || true
     if hdiutil detach -quiet "${mnt}" </dev/null; then rmdir "${mnt}" 2>/dev/null || true; fi
 
+    # Releases signed with the same certificate keep their Accessibility permission.
+    # If the signature changed (e.g. an ad-hoc build), the old entry no longer applies:
+    # clear it so the new version can ask again.
+    local reset=0 new_req
+    new_req=$(designated_requirement "${apps}/MCClose.app")
     if [ "${upgrading}" = 1 ]; then
-        # Each build has a new ad-hoc signature, so macOS's old Accessibility
-        # entry no longer applies. Clear it so the new version can ask again.
-        tccutil reset Accessibility "${bundle_id}" >/dev/null 2>&1 || true
+        case "${new_req}" in
+            *cdhash*) reset=1 ;;
+            *) [ -n "${old_req}" ] && [ "${old_req}" = "${new_req}" ] || reset=1 ;;
+        esac
+        if [ "${reset}" = 1 ]; then
+            tccutil reset Accessibility "${bundle_id}" >/dev/null 2>&1 || true
+        fi
     fi
 
     local version
@@ -92,8 +109,10 @@ main() {
         open "${apps}/MCClose.app"
         say ""
         say "Next: in the MC Close window, click Open Accessibility Settings and switch MC Close on."
-        if [ "${upgrading}" = 1 ]; then
-            say "(After an update macOS asks again: switch MC Close on once more.)"
+        if [ "${upgrading}" = 1 ] && [ "${reset}" = 1 ]; then
+            say "(This update needs the permission again: switch MC Close on once more.)"
+        elif [ "${upgrading}" = 1 ]; then
+            say "(Your Accessibility permission carries over: nothing to do.)"
         fi
         say "Then open Mission Control, point at a window and press ⌘W, or click the ✕."
         say "No window? Click the MC Close icon in the menu bar (top right) and choose Set Up…"

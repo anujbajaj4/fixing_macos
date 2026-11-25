@@ -66,9 +66,16 @@ cat > "$app/Contents/Info.plist" <<EOF
 EOF
 plutil -lint "$app/Contents/Info.plist"
 
-echo "==> Signing (ad hoc: no Apple Developer account needed)"
-codesign --force --deep --sign - --identifier "$bundle_id" "$app"
+# Releases are signed with one long-lived self-made certificate (MCCLOSE_SIGN_IDENTITY, set up
+# by scripts/ci_signing.sh), so macOS sees every version as the same app and keeps its
+# Accessibility permission. Without it, sign ad hoc (no Apple Developer account needed).
+identity="${MCCLOSE_SIGN_IDENTITY:--}"
+sign_args=(--force --deep --sign "$identity" --identifier "$bundle_id")
+if [ -n "${MCCLOSE_KEYCHAIN:-}" ]; then sign_args+=(--keychain "${MCCLOSE_KEYCHAIN}"); fi
+if [ "$identity" = "-" ]; then echo "==> Signing (ad hoc)"; else echo "==> Signing with \"${identity}\""; fi
+codesign "${sign_args[@]}" "$app"
 codesign --verify --deep --strict "$app"
+echo "designated requirement: $(codesign -dr - "$app" 2>&1 | sed -n 's/^designated => //p')"
 echo "architectures: $(lipo -archs "$app/Contents/MacOS/$app_name")"
 
 echo "==> Disk image"

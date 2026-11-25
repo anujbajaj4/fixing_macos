@@ -26,6 +26,12 @@ jobs:
             echo "v$version is already released: bump VERSION first."; exit 1
           fi
 
+      - name: Signing certificate (keeps Accessibility permission across updates)
+        env:
+          MCCLOSE_SIGNING_P12: ${{ secrets.MCCLOSE_SIGNING_P12 }}
+          MCCLOSE_SIGNING_PASSWORD: ${{ secrets.MCCLOSE_SIGNING_PASSWORD }}
+        run: scripts/ci_signing.sh
+
       - name: Test and build
         run: |
           bash Tests/install_test.sh

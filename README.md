@@ -98,6 +98,15 @@ MCCLOSE_DMG_URL="file://$PWD/build/MCClose.dmg" bash < install.sh
 
 The installer tests run anywhere, Linux included: `bash Tests/install_test.sh`.
 
+## Signing (keeps the Accessibility permission across updates)
+
+macOS remembers the Accessibility permission per code signature. Releases are signed with one
+long-lived, self-made certificate ("MC Close Signing"), so every version looks like the same app
+and keeps the permission. No Apple Developer account is needed. CI loads it from two repository
+secrets, `MCCLOSE_SIGNING_P12` (the .p12, base64) and `MCCLOSE_SIGNING_PASSWORD`, with
+`scripts/ci_signing.sh`. Without them, builds are signed ad hoc, and the installer then resets the
+permission on update so macOS asks again. Keep the .p12 private and never commit it.
+
 ## Releasing
 
 1. Bump `VERSION` and update `.github/release-notes.md`.
@@ -117,3 +126,7 @@ rm -rf /Applications/MCClose.app ~/Library/Logs/MCClose*.log
 ```bash
 tccutil reset Accessibility io.github.anujbajaj4.MCClose
 ```
+
+## Licence
+
+MIT. See [LICENSE](LICENSE). The website bundles the Inter typeface under the SIL Open Font License (`site/fonts/LICENSE-Inter.txt`).
