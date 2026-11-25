@@ -68,18 +68,12 @@ enum AX {
 
 /// A window thumbnail as the Dock exposes it during Mission Control.
 struct Thumbnail {
-    let element: AXUIElement
+    let element: AXUIElement   // the Dock's AXButton for this window
     let title: String
     let frame: CGRect   // top-left–origin global coordinates
 }
 
 enum WindowCloser {
-    private static let systemWide: AXUIElement = {
-        let el = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(el, 0.25)
-        return el
-    }()
-
     private static var dockPID: pid_t? {
         NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock")
             .first?.processIdentifier
@@ -90,49 +84,41 @@ enum WindowCloser {
         CGEvent(source: nil)?.location ?? .zero
     }
 
-    /// The Mission Control thumbnail under `point`, if there is one.
-    /// `trace` collects what was found, for the log.
-    static func thumbnail(at point: CGPoint, trace: ((String) -> Void)? = nil) -> Thumbnail? {
-        guard let dockPID else { trace?("Dock is not running"); return nil }
-        var hit: AXUIElement?
-        let err = AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &hit)
-        guard err == .success, var el = hit else { trace?("no element under pointer (AX error \(err.rawValue))"); return nil }
-        guard AX.pid(el) == dockPID else {
-            trace?("element under pointer belongs to pid \(AX.pid(el) ?? -1), not the Dock: \(AX.describe(el))")
-            return nil
-        }
+    /// Every window thumbnail Mission Control is showing, read from the Dock's AX tree.
+    ///
+    /// Why not ask "what is under the pointer" (AXUIElementCopyElementAtPosition)? In
+    /// Mission Control that looks straight through the thumbnails and returns the real
+    /// window underneath (seen on macOS 15), so we list the thumbnails and hit-test ourselves.
+    static func missionControlThumbnails() -> [Thumbnail] {
+        guard let dockPID else { return [] }
+        let dock = AXUIElementCreateApplication(dockPID)
+        AXUIElementSetMessagingTimeout(dock, 0.25)
+        var found: [Thumbnail] = []
 
-        // The hit element may be a child of the thumbnail; walk up to the one with a title.
-        for level in 0..<4 {
-            trace?("level \(level): \(AX.describe(el))")
+        func walk(_ el: AXUIElement, depth: Int, ancestors: [String]) {
+            guard depth < 8, found.count < 300 else { return }
             let role = AX.string(el, kAXRoleAttribute) ?? ""
-            if ThumbnailFilter.isBoundary(role: role) {
-                trace?("not a window thumbnail (\(role))")
-                return nil
+            if depth > 0 && ThumbnailFilter.isBoundary(role: role) { return }   // the Dock's icon row
+            let title = AX.string(el, kAXTitleAttribute) ?? ""
+            if title == "Spaces Bar" { return }
+            if depth > 0, !title.isEmpty,
+               ThumbnailFilter.isWindowThumbnail(role: role, ancestorTitles: ancestors),
+               let frame = AX.frame(el), frame.width > 20, frame.height > 20 {
+                found.append(Thumbnail(element: el, title: title, frame: frame))
+                return   // nothing to find inside a thumbnail
             }
-            if let title = AX.string(el, kAXTitleAttribute), !title.isEmpty,
-               let frame = AX.frame(el) {
-                guard ThumbnailFilter.isWindowThumbnail(role: role, ancestorTitles: ancestorTitles(of: el)) else {
-                    trace?("not a window thumbnail (Spaces Bar)")
-                    return nil
-                }
-                return Thumbnail(element: el, title: title, frame: frame)
+            let next = title.isEmpty ? ancestors : [title] + ancestors
+            for child in AX.elements(el, kAXChildrenAttribute) {
+                walk(child, depth: depth + 1, ancestors: next)
             }
-            guard let parent = AX.element(el, kAXParentAttribute) else { break }
-            el = parent
         }
-        return nil
+        walk(dock, depth: 0, ancestors: [])
+        return found
     }
 
-    private static func ancestorTitles(of el: AXUIElement) -> [String] {
-        var titles: [String] = []
-        var current = el
-        for _ in 0..<6 {
-            guard let parent = AX.element(current, kAXParentAttribute) else { break }
-            if let t = AX.string(parent, kAXTitleAttribute), !t.isEmpty { titles.append(t) }
-            current = parent
-        }
-        return titles
+    /// The thumbnail in `thumbnails` under `point`, if any.
+    static func thumbnail(at point: CGPoint, in thumbnails: [Thumbnail]) -> Thumbnail? {
+        Geometry.index(of: point, in: thumbnails.map(\.frame)).map { thumbnails[$0] }
     }
 
     /// Match a thumbnail to the app's real window by title.
@@ -183,9 +169,10 @@ enum WindowCloser {
 
     @discardableResult
     static func closeWindowUnderMouse() -> Bool {
-        var lines: [String] = []
-        guard let thumb = thumbnail(at: mouseLocation(), trace: { lines.append($0) }) else {
-            Log.write("⌘W: no thumbnail under pointer; " + lines.joined(separator: "; "))
+        let thumbs = missionControlThumbnails()
+        let mouse = mouseLocation()
+        guard let thumb = thumbnail(at: mouse, in: thumbs) else {
+            Log.write("⌘W: pointer (\(Int(mouse.x)), \(Int(mouse.y))) is not on any of the \(thumbs.count) window thumbnails")
             NSSound.beep()
             return false
         }

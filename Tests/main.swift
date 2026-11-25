@@ -56,6 +56,13 @@ check(Geometry.closeButtonRect(forThumbnail: CGRect(x: 200, y: 300, width: 400, 
         == CGRect(x: 188, y: 288, width: 24, height: 24),
       "close button centred on top-left corner")
 
+let thumbs = [CGRect(x: 0, y: 0, width: 100, height: 100), CGRect(x: 200, y: 0, width: 100, height: 100),
+              CGRect(x: 10, y: 10, width: 20, height: 20)]
+check(Geometry.index(of: CGPoint(x: 250, y: 50), in: thumbs) == 1, "pointer on second thumbnail")
+check(Geometry.index(of: CGPoint(x: 150, y: 50), in: thumbs) == nil, "pointer between thumbnails")
+check(Geometry.index(of: CGPoint(x: 15, y: 15), in: thumbs) == 2, "nested frames: smallest wins")
+check(Geometry.index(of: CGPoint(x: 1, y: 1), in: []) == nil, "no thumbnails")
+
 // MARK: Version
 check(Version.isNewer("1.2.10", than: "1.2.9"), "numeric, not string, compare")
 check(Version.isNewer("v1.1", than: "1.0.9"), "leading v and short version")

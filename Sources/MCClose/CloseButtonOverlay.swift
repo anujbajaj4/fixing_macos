@@ -14,6 +14,8 @@ final class CloseButtonOverlay: NSObject {
     private var current: Thumbnail?
     private var buttonRectAX: CGRect = .zero   // where the ✕ is, in AX (top-left) coordinates
     private var loggedMiss = false
+    private var thumbnails: [Thumbnail] = []
+    private var thumbnailsRead = Date.distantPast
 
     /// Turned off from the menu if someone only wants ⌘W.
     var enabled: Bool {
@@ -33,6 +35,8 @@ final class CloseButtonOverlay: NSObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        thumbnails = []
+        thumbnailsRead = .distantPast
         current = nil
         buttonRectAX = .zero
         panel.orderOut(nil)
@@ -44,15 +48,21 @@ final class CloseButtonOverlay: NSObject {
         // While the pointer is on our own ✕, keep targeting the same thumbnail.
         if panel.isVisible && buttonRectAX.insetBy(dx: -4, dy: -4).contains(mouse) { return }
 
-        guard let thumb = WindowCloser.thumbnail(at: mouse) else {
+        // Re-read the thumbnails 5 times a second (they move while Mission Control
+        // animates, and after a window closes); hit-test against the cached list in between.
+        if Date().timeIntervalSince(thumbnailsRead) > 0.2 {
+            thumbnails = WindowCloser.missionControlThumbnails()
+            thumbnailsRead = Date()
+        }
+        guard let thumb = WindowCloser.thumbnail(at: mouse, in: thumbnails) else {
             current = nil
             if panel.isVisible { panel.orderOut(nil) }
             return
         }
         if !loggedMiss {
-            // Once per Mission Control visit, note that hit-testing works at all.
+            // Once per Mission Control visit, note that finding thumbnails works at all.
             loggedMiss = true
-            Log.write("overlay: found a thumbnail under the pointer (\(Log.title(thumb.title)))")
+            Log.write("overlay: \(thumbnails.count) window thumbnails; pointer on \(Log.title(thumb.title))")
         }
         current = thumb
         place(onTopLeftOf: thumb.frame)
@@ -100,6 +110,7 @@ final class CloseButtonOverlay: NSObject {
         if WindowCloser.close(current, via: "✕ button") {
             self.current = nil
             buttonRectAX = .zero
+            thumbnailsRead = .distantPast   // the layout changes after a close
             panel.orderOut(nil)
         }
     }

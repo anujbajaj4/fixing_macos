@@ -66,6 +66,14 @@ enum ThumbnailFilter {
 }
 
 enum Geometry {
+    /// Which of `frames` the pointer is on. If several contain it, the smallest wins
+    /// (the most specific one). nil if none.
+    static func index(of point: CGPoint, in frames: [CGRect]) -> Int? {
+        frames.indices
+            .filter { frames[$0].contains(point) }
+            .min { frames[$0].width * frames[$0].height < frames[$1].width * frames[$1].height }
+    }
+
     /// Accessibility frames use a top-left origin on the main display; AppKit
     /// windows use a bottom-left origin. Convert an AX rect to an AppKit rect.
     static func appKitRect(fromAX r: CGRect, mainScreenHeight h: CGFloat) -> CGRect {
