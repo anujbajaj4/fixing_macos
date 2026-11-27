@@ -68,8 +68,22 @@ enum WindowMatcher {
             let s = shaped(list)
             return s.count == 1 ? .match(s[0]) : .ambiguous(list)
         }
-        if let o = decide(exact) { return o }
-        if let o = decide(loose) { return o }
+        /// Among loose matches, the most specific title wins (a document's name beats a helper
+        /// window called just "Preview"); a title that is only the app's name never wins a tie.
+        func mostSpecific(_ list: [Int]) -> [Int] {
+            guard list.count > 1 else { return list }
+            let named = list.filter { normalize(candidates[$0].title) != normalize(candidates[$0].appName) }
+            let pool = named.isEmpty ? list : named
+            let best = pool.map { normalize(candidates[$0].title).count }.max() ?? 0
+            return pool.filter { normalize(candidates[$0].title).count == best }
+        }
+        /// A match whose shape clearly disagrees with the thumbnail is probably the wrong window.
+        func checked(_ o: Outcome) -> Outcome {
+            guard case .match(let i) = o, let ts = thumbnailSize, let ws = candidates[i].size else { return o }
+            return sameShape(ws, ts, tolerance: 0.1) ? o : .none
+        }
+        if let o = decide(exact) { return checked(o) }
+        if let o = decide(mostSpecific(loose)) { return checked(o) }
         if shapeAlone {
             let s = shaped(candidates.indices.filter { !candidates[$0].minimized })
             if s.count == 1 { return .match(s[0]) }
@@ -301,8 +315,13 @@ enum ButtonLayout {
             let d = max(n.diameter * s, minDiameter)
             let spacing = max(n.spacing * s, d + 1.5)
             let first = CGPoint(x: f.minX + n.closeCenter.x * s, y: f.minY + n.closeCenter.y * s)
-            return (0..<count).map { i in
-                CGRect(x: first.x + CGFloat(i) * spacing - d / 2, y: first.y - d / 2, width: d, height: d)
+            // Only trust the measurement if it lands in the thumbnail's top-left corner, where a
+            // window's controls are; anything else means a bad measurement: use the default row.
+            if first.x - f.minX <= f.width * 0.4, first.y - f.minY <= f.height * 0.25,
+               first.x >= f.minX, first.y >= f.minY {
+                return (0..<count).map { i in
+                    CGRect(x: first.x + CGFloat(i) * spacing - d / 2, y: first.y - d / 2, width: d, height: d)
+                }
             }
         }
         let k = scale(forThumbnail: f, count: count)

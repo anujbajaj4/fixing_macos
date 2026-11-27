@@ -36,6 +36,13 @@ check(WindowMatcher.pick(thumbnailTitle: "report.pdf", from: [w("Report.pdf"), w
 check(WindowMatcher.pick(thumbnailTitle: "Report", from: [w("Report.pdf (page 2 of 9)"), w("Other.pdf")]) == .match(0),
       "a window title that contains the thumbnail's matches")
 check(WindowMatcher.pick(thumbnailTitle: "a", from: [w("ab")]) == .none, "one-letter titles don't loosely match")
+// Seen on macOS 27: the thumbnail reads "Preview — <file>.pdf" and Preview also has a helper window titled "Preview".
+check(WindowMatcher.pick(thumbnailTitle: "Preview — FOS0000.pdf", from: [w("FOS0000.pdf", "Preview"), w("Preview", "Preview"), w("Other.pdf", "Preview")]) == .match(0),
+      "a document's name beats a helper window called just the app's name")
+check(WindowMatcher.pick(thumbnailTitle: "Report draft notes", from: [w("Report draft"), w("Report")]) == .match(0),
+      "the most specific loose title wins")
+check(WindowMatcher.pick(thumbnailTitle: "Report draft notes", from: [w("Report draft"), w("draft notes")]) == .ambiguous([0, 1]),
+      "two equally specific titles: refuse")
 // The thumbnail's shape breaks ties and, within one app, can find the window alone.
 func ws(_ t: String, _ wd: CGFloat, _ ht: CGFloat) -> WindowCandidate { WindowCandidate(title: t, appName: "Preview", minimized: false, size: CGSize(width: wd, height: ht)) }
 let thumbShape = CGSize(width: 383, height: 251)   // a 600x400 window in Mission Control (1.5 : 1)
@@ -49,6 +56,11 @@ check(WindowMatcher.pick(thumbnailTitle: "Something else entirely", thumbnailSiz
 check(WindowMatcher.pick(thumbnailTitle: "Something else entirely", thumbnailSize: thumbShape,
                          from: [ws("Doc A", 600, 400), ws("Doc B", 500, 700)]) == .none,
       "across all apps, shape alone never picks a window")
+// Seen on macOS 27 (Finder): buttons landed far from the controls, as with the wrong (smaller) window.
+check(WindowMatcher.pick(thumbnailTitle: "Searching This Mac", thumbnailSize: thumbShape, from: [ws("Searching This Mac", 400, 700)]) == .none,
+      "a title match whose shape clearly disagrees with the thumbnail is refused")
+check(WindowMatcher.pick(thumbnailTitle: "Searching This Mac", thumbnailSize: thumbShape, from: [ws("Searching This Mac", 640, 440)]) == .match(0),
+      "a title match with the thumbnail's shape (within 10%) is kept")
 check(WindowMatcher.pick(thumbnailTitle: "Something else entirely", thumbnailSize: thumbShape, shapeAlone: true,
                          from: [ws("Doc A", 600, 400), ws("Doc B", 300, 200)]) == .ambiguous([0, 1]),
       "two windows with that shape: refuse")
@@ -156,6 +168,9 @@ let nr = ButtonLayout.rects(forThumbnail: thumbN, count: 4, native: native)
 check(abs(nr[0].midX - 110) < 0.01 && abs(nr[0].midY - 110) < 0.01, "close sits exactly on the miniature close button")
 check(abs(nr[0].width - 9) < 0.01, "7 pt miniature controls get the 9 pt minimum, centred on them")
 check(abs((nr[1].midX - nr[0].midX) - 10.5) < 0.01, "spacing follows the window's, widened just enough to keep a gap")
+let offNative = NativeControls(closeCenter: CGPoint(x: 400, y: 600), diameter: 14, spacing: 20, windowSize: CGSize(width: 1000, height: 700))
+check(ButtonLayout.rects(forThumbnail: thumbN, count: 4, native: offNative) == ButtonLayout.rects(forThumbnail: thumbN, count: 4),
+      "a measurement that wouldn't land in the top-left corner falls back to the default row")
 let bigThumb = CGRect(x: 0, y: 0, width: 800, height: 560)   // scale 0.8
 let nb = ButtonLayout.rects(forThumbnail: bigThumb, count: 4, native: native)
 check(abs(nb[0].width - 11.2) < 0.01 && abs((nb[1].midX - nb[0].midX) - 16) < 0.01 && abs(nb[2].midX - 48) < 0.01,

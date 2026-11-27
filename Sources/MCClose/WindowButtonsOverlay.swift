@@ -378,22 +378,30 @@ final class WindowButtonsOverlay: NSObject {
         checking = true
         reader.async { [weak self] in
             let snap = WindowCloser.snapshot()
-            let results: [(String, Thumbnail, Verdict)] = list.map { t in
-                let window = WindowCloser.match(t, in: snap).window
-                return (Self.key(t), t, Verdict(ok: window != nil,
-                                                native: window.flatMap(WindowCloser.nativeControls),
-                                                windowFrame: window.flatMap { AX.frame($0) }))
+            let results: [(String, Verdict, String)] = list.map { t in
+                var lines: [String] = []
+                let window = WindowCloser.match(t, in: snap, trace: { lines.append($0) }).window
+                let native = window.flatMap(WindowCloser.nativeControls)
+                let frame = window.flatMap { AX.frame($0) }
+                // One line per window per visit, so a glitch can be explained (titles stay hidden).
+                var detail = "thumbnail \(Int(t.frame.width))x\(Int(t.frame.height)) at \(Int(t.frame.minX)),\(Int(t.frame.minY))"
+                    + (t.appBundleID.map { " (\($0))" } ?? "") + "; " + lines.joined(separator: "; ")
+                if let f = frame { detail += "; window \(Int(f.width))x\(Int(f.height))" }
+                if let n = native {
+                    detail += "; own controls at \(Int(n.closeCenter.x)),\(Int(n.closeCenter.y)) size \(Int(n.diameter))"
+                } else if window != nil {
+                    detail += "; own controls not found: default corner"
+                }
+                detail += window == nil ? "; no buttons" : "; buttons on"
+                return (Self.key(t), Verdict(ok: window != nil, native: native, windowFrame: frame), detail)
             }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.checking = false
-                for (k, t, v) in results {
+                for (k, v, detail) in results {
                     self.verdicts[k] = v
                     self.rechecked.insert(k)
-                    if !v.ok {
-                        self.logOnce(k + "nomatch", "overlay: no buttons for \(Log.title(t.title))"
-                            + (t.appBundleID.map { " (\($0))" } ?? "") + ": no single visible window of a normal app has that title")
-                    }
+                    self.logOnce(k + "check", "overlay check: " + detail)
                 }
                 self.lastRead = .distantPast   // redraw with the answers
             }

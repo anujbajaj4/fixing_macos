@@ -34,7 +34,7 @@
   "url": "https://anujbajaj4.github.io/fixing_macos/",
   "downloadUrl": "https://github.com/anujbajaj4/fixing_macos/releases/latest/download/MCClose.dmg",
   "installUrl": "https://anujbajaj4.github.io/fixing_macos/#get-started",
-  "softwareVersion": "1.4.0",
+  "softwareVersion": "1.4.1",
   "operatingSystem": "macOS 13 or later",
   "applicationCategory": "UtilitiesApplication",
   "isAccessibleForFree": true,
@@ -603,7 +603,7 @@
         <button class="it" role="menuitem" data-menu="update"><span>Check for Updates</span></button>
         <button class="it" role="menuitem" data-menu="setup"><span>Set Up…</span></button>
         <hr>
-        <div class="it dim">Version 1.4.0</div>
+        <div class="it dim">Version 1.4.1</div>
         <button class="it" role="menuitem" data-menu="quit"><span>Quit MC Close</span><span class="k">⌘Q</span></button>
       </div>
       <div class="stage" id="stage">
@@ -733,7 +733,7 @@
           <figure><div class="term"><div class="tb"><i></i><i></i><i></i></div><pre><span class="d">$</span> curl -fsSL …/install.sh | bash
 Downloading MC Close…
 ######################################## 100.0%
-<span class="g">Installed MC Close 1.4.0 in /Applications.</span></pre></div>
+<span class="g">Installed MC Close 1.4.1 in /Applications.</span></pre></div>
             <figcaption><b>1</b>Terminal says it's installed.</figcaption></figure>
         </div>
       </div>
@@ -978,7 +978,7 @@ Downloading MC Close…
       place(w, d.d); stage.appendChild(w);
     });
     logEl.innerHTML = '';
-    log('MC Close 1.4.0 launched; Accessibility granted');
+    log('MC Close 1.4.1 launched; Accessibility granted');
     log('event tap started (active only while Mission Control is open)');
     mcIcon.classList.remove('gone'); $('#menuHead').textContent = 'MC Close is on';
     $('#mcToggle').textContent = 'Open Mission Control'; $('#mcToggle').setAttribute('aria-pressed', 'false');
@@ -1028,10 +1028,10 @@ Downloading MC Close…
       case 'settings': sheet.classList.add('open'); log('opened Settings'); break;
       case 'log': logwin.classList.remove('hide'); $('#logToggle').setAttribute('aria-pressed', 'true'); $('#logToggle').textContent = 'Hide log'; break;
       case 'diagnose':
-        log('diagnose: started (MC Close 1.4.0, 1 display)');
+        log('diagnose: started (MC Close 1.4.1, 1 display)');
         log('diagnose 1/4: Mission Control ' + (state.mc ? 'open' : 'closed') + '; ' + (state.mc ? $$('.win:not(.gone):not(.minimized)', stage).length : 0) + ' window thumbnails');
         log('diagnose: finished', 'ok'); logwin.classList.remove('hide'); break;
-      case 'update': log('update check: you have the latest version, 1.4.0', 'ok'); toast('MC Close is up to date'); break;
+      case 'update': log('update check: you have the latest version, 1.4.1', 'ok'); toast('MC Close is up to date'); break;
       case 'setup': log('Set Up: Accessibility already allowed', 'ok'); toast('Accessibility is on: you\'re all set'); break;
       case 'quit':
         state.running = false; screen.classList.remove('with-mcclose'); mcIcon.classList.add('gone');
