@@ -162,8 +162,16 @@ enum WindowCloser {
         var regular: [Bool] = []   // a Dock app (menu-bar-style "accessory" apps are false)
     }
 
+    /// Windows seen before, per app. macOS's accessibility API only lists an app's windows on
+    /// the space you're in, so from a full-screen app Mission Control shows windows it can't
+    /// see. A window element stays valid on other spaces, so remembering it lets MC Close
+    /// still match those thumbnails and press the window's buttons.
+    private static var known: [pid_t: [AXUIElement]] = [:]
+    private static let knownLock = NSLock()
+
     static func snapshot() -> WindowSnapshot {
         var snap = WindowSnapshot()
+        var running: Set<pid_t> = []
         // Menu-bar-style apps (e.g. Wispr Flow) can have normal windows too; they're only
         // considered when the thumbnail itself names the app (see `match`).
         for app in NSWorkspace.shared.runningApplications
@@ -171,7 +179,15 @@ enum WindowCloser {
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(appElement, 0.3) // don't hang on a frozen app
             let appName = app.localizedName ?? ""
-            for window in AX.elements(appElement, kAXWindowsAttribute) {
+            let pid = app.processIdentifier
+            running.insert(pid)
+            let listed = AX.elements(appElement, kAXWindowsAttribute)
+            knownLock.lock(); let remembered = known[pid] ?? []; knownLock.unlock()
+            // Remembered windows not listed now (on another space) and still open.
+            let elsewhere = remembered.filter { r in !listed.contains { CFEqual($0, r) } && AX.frame(r) != nil }
+            let all = listed + elsewhere
+            knownLock.lock(); known[pid] = Array(all.suffix(60)); knownLock.unlock()
+            for window in all {
                 // Invisible helper windows are often tiny; they're never what a thumbnail shows.
                 let frame = AX.frame(window)
                 if let f = frame, f.width < 40 || f.height < 30 { continue }
@@ -185,7 +201,13 @@ enum WindowCloser {
                     size: frame?.size))
             }
         }
+        knownLock.lock(); known = known.filter { running.contains($0.key) }; knownLock.unlock()
         return snap
+    }
+
+    /// Called at launch: get to know every app's windows on the current space straight away.
+    static func warmUp() {
+        DispatchQueue.global(qos: .utility).async { _ = snapshot() }
     }
 
     /// Where a window's own close/minimize/zoom controls are, relative to its top-left corner,

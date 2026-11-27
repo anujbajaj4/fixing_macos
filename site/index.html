@@ -36,7 +36,7 @@
   "url": "https://anujbajaj4.github.io/fixing_macos/",
   "installUrl": "https://anujbajaj4.github.io/fixing_macos/#get-started",
   "downloadUrl": "https://github.com/anujbajaj4/fixing_macos/releases/latest/download/MCClose.dmg",
-  "softwareVersion": "1.4.1",
+  "softwareVersion": "1.4.2",
   "operatingSystem": "macOS 13 or later",
   "applicationCategory": "UtilitiesApplication",
   "license": "https://opensource.org/licenses/MIT",
@@ -1018,7 +1018,7 @@ kbd.key {
           <button class="menu-item" type="button" role="menuitem" data-action="update">Check for Updates</button>
           <button class="menu-item" type="button" role="menuitem" data-action="setup">Set Up…</button>
           <div class="menu-sep"></div>
-          <div class="menu-item dim">Version 1.4.1</div>
+          <div class="menu-item dim">Version 1.4.2</div>
           <button class="menu-item" type="button" role="menuitem" data-action="quit">Quit MC Close <kbd>⌘Q</kbd></button>
         </div>
         <div class="settings-win" id="pg-settings" role="dialog" aria-label="MC Close Settings" hidden>
@@ -1529,11 +1529,11 @@ kbd.key {
     settings: function () { $("pg-theme").value = state.theme; pg.settings.hidden = false; setTimeout(function () { $("pg-theme").focus(); }, 50); },
     log: function () { pg.logwin.classList.add("flash"); later(900, function () { pg.logwin.classList.remove("flash"); }); },
     diagnose: function () {
-      addLog("diagnose: started (MC Close 1.4.1, 1 display)");
+      addLog("diagnose: started (MC Close 1.4.2, 1 display)");
       later(600, function () { addLog("diagnose: Mission Control " + (state.mc ? "open, " + live() + " windows" : "closed"), state.mc ? "ok" : ""); });
       later(1100, function () { addLog("diagnose: finished"); });
     },
-    update: function () { addLog("update check: 1.4.1 is the latest version", "ok"); showToast("MC Close is up to date"); },
+    update: function () { addLog("update check: 1.4.2 is the latest version", "ok"); showToast("MC Close is up to date"); },
     setup: function () { addLog("Set Up: Accessibility is on; you're all set", "ok"); showToast("You're all set"); },
     quit: function () {
       setMenu(false); state.quit = true;
@@ -1548,7 +1548,7 @@ kbd.key {
   });
   pg.icon.addEventListener("click", function () { setMenu(pg.menu.classList.contains("closed")); });
   pg.relaunch.addEventListener("click", function () {
-    state.quit = false; addLog("MC Close 1.4.1 launched; Accessibility granted"); render(); setMenu(true); bump();
+    state.quit = false; addLog("MC Close 1.4.2 launched; Accessibility granted"); render(); setMenu(true); bump();
   });
   pg.mcChip.addEventListener("click", function () { setMC(!state.mc); });
   $("pg-settings-cancel").addEventListener("click", function () { pg.settings.hidden = true; });
@@ -1566,7 +1566,7 @@ kbd.key {
     state = { mc: false, quit: false, theme: "multicolor" };
     pg.log.textContent = ""; pg.settings.hidden = true;
     buildDesk();
-    addLog("MC Close 1.4.1 launched on macOS 27; Accessibility granted");
+    addLog("MC Close 1.4.2 launched on macOS 27; Accessibility granted");
     addLog("event tap started (active only while Mission Control is open)");
     addLog("Ready. Open Mission Control to try the buttons.", "ok");
     setMenu(true); render();
@@ -1737,14 +1737,14 @@ kbd.key {
     terminal:
       '<figure><div class="vis-stage"><div class="mac-win">' + bar("Terminal") +
         '<div class="term-mock"><span><span class="p">~ %</span> curl -fsSL https://github.com/anujbajaj4/fixing_macos/releases/latest/download/install.sh | bash</span>' +
-        '<span>Downloading MC Close…</span><span class="ok">Installed MC Close 1.4.1 in /Applications.</span></div>' +
+        '<span>Downloading MC Close…</span><span class="ok">Installed MC Close 1.4.2 in /Applications.</span></div>' +
       '</div></div>' + cap(1, "Paste with <b>⌘V</b> and press <b>Return</b>. It takes a few seconds.") + '</figure>',
     access: ACCESS,
     dmg:
       '<figure><div class="vis-stage"><div class="mac-win">' + bar("Downloads") +
         '<div class="mac-body"><div class="list-head">Today</div><div class="file-row hl">' + DISK + 'MCClose.dmg<small>620 KB</small></div></div>' +
       '</div></div>' + cap(1, "<b>Open MCClose.dmg</b> from your Downloads.") + '</figure>' +
-      '<figure><div class="vis-stage"><div class="mac-win">' + bar("MC Close 1.4.1") +
+      '<figure><div class="vis-stage"><div class="mac-win">' + bar("MC Close 1.4.2") +
         '<div class="dmg-body"><div class="dmg-item">' + APP_TILE + 'MC Close</div>' +
         '<svg class="dmg-arrow" viewBox="0 0 70 34" aria-hidden="true"><path d="M4 26C20 4 46 4 62 22" fill="none" stroke="#0A7AFF" stroke-width="2.5" stroke-dasharray="5 5" stroke-linecap="round"/><path d="M54 21l9 2-2-9" fill="none" stroke="#0A7AFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
         '<div class="dmg-item hl">' + FOLDER + 'Applications</div></div>' +

@@ -1,6 +1,9 @@
 Control any window right from Mission Control: point at it, then use the buttons on its corner or a shortcut.
 
-## What's new in 1.4.1
+## What's new in 1.4.2
+- **Buttons when you start from a full-screen app.** macOS only tells apps about windows on the space you're in, so opening Mission Control from a full-screen app (say, Claude in full screen) left every window without buttons. MC Close now remembers the windows of each space you've visited and can still use them. A window opened while you never left full screen gets buttons once you've visited its space.
+
+## In 1.4.1
 - **Buttons in the right place, on the right window.** On macOS 27 a few windows got no buttons (Preview) or buttons in the wrong spot (Finder). MC Close now prefers the window whose title fits best over helper windows named after the app, refuses a match whose shape doesn't agree with its thumbnail, and uses the standard corner if a measurement looks wrong. Menu-bar-style apps with windows (Wispr Flow) get buttons too.
 - **No more stray, unclickable buttons** on floating video tiles, panels or overlays: only windows with a close button of their own get buttons, and every row is scaled to its window (no more full-size rows).
 - The log now says, for each window in Mission Control, what MC Close matched and where it put the buttons (window titles stay hidden), so any remaining glitch can be fixed from one log.
