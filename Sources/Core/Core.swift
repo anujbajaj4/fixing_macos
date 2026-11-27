@@ -68,14 +68,18 @@ enum WindowMatcher {
             let s = shaped(list)
             return s.count == 1 ? .match(s[0]) : .ambiguous(list)
         }
-        /// Among loose matches, the most specific title wins (a document's name beats a helper
-        /// window called just "Preview"); a title that is only the app's name never wins a tie.
+        /// Among loose matches: a title that is only the app's name never wins a tie (a helper
+        /// window called "Preview" next to a document), and a title contained in another
+        /// candidate's title loses to it ("Report" loses to "Report draft"). Titles that
+        /// merely differ in length stay a tie, so MC Close still refuses to guess.
         func mostSpecific(_ list: [Int]) -> [Int] {
             guard list.count > 1 else { return list }
             let named = list.filter { normalize(candidates[$0].title) != normalize(candidates[$0].appName) }
             let pool = named.isEmpty ? list : named
-            let best = pool.map { normalize(candidates[$0].title).count }.max() ?? 0
-            return pool.filter { normalize(candidates[$0].title).count == best }
+            let titles = pool.map { normalize(candidates[$0].title) }
+            return pool.indices.filter { i in
+                !titles.indices.contains { j in j != i && titles[j] != titles[i] && titles[j].contains(titles[i]) }
+            }.map { pool[$0] }
         }
         /// A match whose shape clearly disagrees with the thumbnail is probably the wrong window.
         func checked(_ o: Outcome) -> Outcome {

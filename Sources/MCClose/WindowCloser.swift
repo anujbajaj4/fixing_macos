@@ -159,11 +159,15 @@ enum WindowCloser {
         var windows: [AXUIElement] = []
         var candidates: [WindowCandidate] = []
         var bundleIDs: [String?] = []
+        var regular: [Bool] = []   // a Dock app (menu-bar-style "accessory" apps are false)
     }
 
     static func snapshot() -> WindowSnapshot {
         var snap = WindowSnapshot()
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && !app.isHidden {
+        // Menu-bar-style apps (e.g. Wispr Flow) can have normal windows too; they're only
+        // considered when the thumbnail itself names the app (see `match`).
+        for app in NSWorkspace.shared.runningApplications
+        where (app.activationPolicy == .regular || app.activationPolicy == .accessory) && !app.isHidden {
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(appElement, 0.3) // don't hang on a frozen app
             let appName = app.localizedName ?? ""
@@ -173,6 +177,7 @@ enum WindowCloser {
                 if let f = frame, f.width < 40 || f.height < 30 { continue }
                 snap.windows.append(window)
                 snap.bundleIDs.append(app.bundleIdentifier)
+                snap.regular.append(app.activationPolicy == .regular)
                 snap.candidates.append(WindowCandidate(
                     title: AX.string(window, kAXTitleAttribute) ?? "",
                     appName: appName,
@@ -204,10 +209,10 @@ enum WindowCloser {
     /// macOS 27 thumbnails name their app, so only that app's windows are considered.
     static func match(_ thumb: Thumbnail, in snap: WindowSnapshot, trace: ((String) -> Void)? = nil)
         -> (window: AXUIElement?, ambiguous: [AXUIElement]) {
-        var indices = Array(snap.windows.indices)
+        var indices = snap.windows.indices.filter { snap.regular[$0] }   // Dock apps, unless the thumbnail names its app
         var oneApp = false
         if let bundle = thumb.appBundleID {
-            let own = indices.filter { snap.bundleIDs[$0] == bundle }
+            let own = snap.windows.indices.filter { snap.bundleIDs[$0] == bundle }
             if !own.isEmpty { indices = own; oneApp = true; trace?("thumbnail belongs to \(bundle)") }
         }
         // Within one app, the thumbnail's shape can identify the window when titles differ.
