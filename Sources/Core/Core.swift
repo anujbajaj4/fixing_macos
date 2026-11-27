@@ -205,6 +205,34 @@ enum MissionControl27 {
         guard !bundle.isEmpty, !bundle.hasPrefix("mc."), !number.isEmpty, number.allSatisfy(\.isNumber) else { return nil }
         return bundle
     }
+
+    /// "com.apple.TextEdit.space.3" → 3: the Space the window is on (SkyLight's ManagedSpaceID).
+    static func spaceID(fromThumbnailIdentifier id: String) -> Int? {
+        guard bundleID(fromThumbnailIdentifier: id) != nil,
+              let r = id.range(of: ".space.", options: .backwards) else { return nil }
+        return Int(id[r.upperBound...])
+    }
+
+    /// The thumbnail's attribute holding its window's CGWindowID (seen on 27.2.1).
+    static let windowIDAttribute = "wid"
+}
+
+/// Which thumbnails Mission Control is actually showing. Measured on macOS 27.2.1:
+/// WindowManager's tree holds the layouts of every Space at once, on top of each other, and
+/// each thumbnail carries its window's CGWindowID. While Mission Control is open, the windows
+/// of the Space it's showing are exactly the ones CGWindowList reports on screen. (From a
+/// full-screen app it shows the desktop behind it, so the active Space is no guide.)
+enum ShownTiles {
+    /// For each thumbnail, is it on screen? One without a window ID (macOS 15's Dock, which
+    /// only lists what it shows) always is.
+    static func shown(windowIDs: [UInt32?], onscreen: Set<UInt32>) -> [Bool] {
+        windowIDs.map { id in id.map(onscreen.contains) ?? true }
+    }
+
+    /// The index of the window with `id` among `windowIDs` (nil entries: ID unknown).
+    static func index(of id: UInt32, in windowIDs: [UInt32?]) -> Int? {
+        windowIDs.firstIndex { $0 == id }
+    }
 }
 
 /// Backup way to tell that Mission Control is open, for macOS versions where the Dock
@@ -273,9 +301,12 @@ enum ThumbnailSanity {
 
     enum Verdict: Equatable { case keep, tooSmall, insideAnother }
 
-    static func check(_ frames: [CGRect]) -> [Verdict] {
+    /// `identified[i]`: the thumbnail names its window (macOS 27's window ID), so it's a real
+    /// window whatever it overlaps: only the size check applies to it.
+    static func check(_ frames: [CGRect], identified: [Bool] = []) -> [Verdict] {
         frames.enumerated().map { i, f in
             if f.width < minWidth || f.height < minHeight { return .tooSmall }
+            if i < identified.count && identified[i] { return .keep }
             let area = f.width * f.height
             let inside = frames.enumerated().contains { j, g in
                 guard j != i, g.width * g.height > area else { return false }

@@ -151,6 +151,13 @@ final class WindowButtonsOverlay: NSObject {
     private var homes: [[CGRect]] = []              // the same rows on the real windows
     private var ridesIn: [Bool] = []                // seen at the start, so they travel in
     private var drawn: [[CGRect]] = []              // what's on screen now
+    private var keys: [String] = []                 // which window each row belongs to
+    /// Mission Control moves its thumbnails (e.g. when the Spaces bar opens), but the frames it
+    /// reports jump straight to the new place: rows glide there over the same time.
+    private var glides: [String: (from: [CGRect], to: [CGRect], start: Date)] = [:]
+    private var lastDrawn: [String: [CGRect]] = [:]
+    /// Thumbnails whose window its app doesn't list yet: when to look again.
+    private var retryAt: [String: Date] = [:]
     private var firstSeen: [String: Date] = [:]
     /// Does a thumbnail (by app + title) have exactly one real, visible window behind it, and
     /// where are that window and its own controls? Kept between visits so the buttons are
@@ -201,8 +208,10 @@ final class WindowButtonsOverlay: NSObject {
         loggedOnce = false
         logged = []
         rechecked = []
+        retryAt = [:]
         firstSeen = [:]
-        thumbnails = []; targets = []; homes = []; ridesIn = []; drawn = []
+        glides = [:]; lastDrawn = [:]
+        thumbnails = []; targets = []; homes = []; ridesIn = []; drawn = []; keys = []
         lastRead = .distantPast
         shown = false
         buildPanels()
@@ -226,7 +235,8 @@ final class WindowButtonsOverlay: NSObject {
         timer?.invalidate()
         timer = nil
         leaving = nil
-        thumbnails = []; targets = []; homes = []; ridesIn = []; drawn = []
+        thumbnails = []; targets = []; homes = []; ridesIn = []; drawn = []; keys = []
+        glides = [:]; lastDrawn = [:]
         armed = nil
         hidePanels(animated: !reduceMotion)
     }
@@ -255,7 +265,7 @@ final class WindowButtonsOverlay: NSObject {
         self.armed = nil
         for p in panels { p.view.pressed = nil; p.view.needsDisplay = true }
         WindowCloser.perform(action, on: armed.thumbnail, via: "button")
-        rechecked.remove(Self.key(armed.thumbnail))   // its size may have changed (zoom): measure again
+        rechecked.remove(armed.thumbnail.key)   // its size may have changed (zoom): measure again
         lastRead = .distantPast                         // the layout changes after a close or minimize
     }
 
@@ -272,8 +282,6 @@ final class WindowButtonsOverlay: NSObject {
         }
     }
 
-    private static func key(_ t: Thumbnail) -> String { (t.appBundleID ?? "") + "\u{1}" + t.title }
-
     private func update() {
         let now = Date()
 
@@ -287,8 +295,9 @@ final class WindowButtonsOverlay: NSObject {
             return
         }
 
-        // Read Mission Control in the background: often while it animates in, then 5 times a second.
-        let interval = now.timeIntervalSince(openedAt) < 0.8 ? 1.0 / 30 : 0.2
+        // Read Mission Control in the background: often while it animates in, then 10 times a
+        // second (frames and window IDs only; windows are looked up once per thumbnail).
+        let interval = now.timeIntervalSince(openedAt) < 0.8 ? 1.0 / 30 : 0.1
         if !reading && now.timeIntervalSince(lastRead) > interval {
             reading = true
             reader.async { [weak self] in
@@ -302,12 +311,27 @@ final class WindowButtonsOverlay: NSObject {
             }
         }
 
-        // Rows seen at the start ride in from the real windows; later ones just appear.
+        // Rows seen at the start ride in from the real windows; later ones just appear. A row
+        // whose thumbnail moved glides after it.
         let progress = now.timeIntervalSince(openedAt) / Motion.duration
         drawn = targets.indices.map { i in
-            guard !reduceMotion, progress < 1, ridesIn[i], i < homes.count else { return targets[i] }
-            return Motion.row(from: homes[i], to: targets[i], progress: progress)
+            let target = targets[i]
+            if reduceMotion { return target }
+            if progress < 1, ridesIn[i], i < homes.count {
+                return Motion.row(from: homes[i], to: target, progress: progress)
+            }
+            let k = keys[i]
+            if let g = glides[k], g.to == target {
+                let p = now.timeIntervalSince(g.start) / Motion.duration
+                if p < 1 { return Motion.row(from: g.from, to: g.to, progress: p) }
+                glides[k] = nil
+            } else if let last = lastDrawn[k], last != target, last.count == target.count {
+                glides[k] = (last, target, now)
+                return last
+            }
+            return target
         }
+        lastDrawn = Dictionary(zip(keys, drawn), uniquingKeysWith: { a, _ in a })
         push(drawn)
         if !shown && !drawn.isEmpty && showButtons { showPanels() }
         if shown && drawn.isEmpty { hidePanels(animated: true) }
@@ -330,22 +354,22 @@ final class WindowButtonsOverlay: NSObject {
         }
     }
 
-    /// Keeps only real windows: big enough, not tucked inside another thumbnail, and matching
-    /// exactly one window MC Close can act on.
+    /// Keeps only real windows: big enough, not tucked inside another thumbnail (unless the
+    /// thumbnail names its window), and matching exactly one window MC Close can act on.
     private func apply(_ all: [Thumbnail]) {
         let now = Date()
-        let sanity = ThumbnailSanity.check(all.map(\.frame))
+        let sanity = ThumbnailSanity.check(all.map(\.frame), identified: all.map { $0.windowID != nil })
         var keep: [Thumbnail] = []
         var toCheck: [Thumbnail] = []
         for (t, verdict) in zip(all, sanity) {
-            let k = Self.key(t)
+            let k = t.key
             if verdict != .keep {
                 logOnce(k + "\(verdict)", "overlay: no buttons for \(Log.title(t.title)) "
                     + "(\(verdict == .tooSmall ? "too small to be a window" : "inside another thumbnail"), "
                     + "\(Int(t.frame.width))x\(Int(t.frame.height)) at \(Int(t.frame.minX)),\(Int(t.frame.minY)))")
                 continue
             }
-            if !rechecked.contains(k) { toCheck.append(t) }
+            if !rechecked.contains(k) && (retryAt[k] ?? .distantPast) <= now { toCheck.append(t) }
             if let v = verdicts[k], v.ok {
                 var t = t
                 t.native = v.native
@@ -354,14 +378,15 @@ final class WindowButtonsOverlay: NSObject {
         }
         let count = buttons.count
         thumbnails = keep
+        keys = keep.map(\.key)
         targets = keep.map { ButtonLayout.rects(forThumbnail: $0.frame, count: count, native: $0.native) }
         homes = keep.map { t in
-            let frame = verdicts[Self.key(t)]?.windowFrame ?? t.frame
+            let frame = verdicts[t.key]?.windowFrame ?? t.frame
             return ButtonLayout.rects(forThumbnail: frame, count: count, native: t.native)
         }
         ridesIn = keep.map { t in
-            let seen = firstSeen[Self.key(t)] ?? now
-            firstSeen[Self.key(t)] = seen
+            let seen = firstSeen[t.key] ?? now
+            firstSeen[t.key] = seen
             return seen.timeIntervalSince(openedAt) < 0.15
         }
         if !loggedOnce && !keep.isEmpty {
@@ -377,10 +402,14 @@ final class WindowButtonsOverlay: NSObject {
         guard !list.isEmpty, !checking else { return }
         checking = true
         reader.async { [weak self] in
-            let snap = WindowCloser.snapshot()
-            let results: [(String, Verdict, String)] = list.map { t in
+            // By window ID where the thumbnail has one; by title (one snapshot for all) otherwise.
+            let byID = WindowCloser.canReadWindowIDs
+            let snap = list.contains { $0.windowID == nil || !byID } ? WindowCloser.snapshot() : nil
+            let results: [(Thumbnail, Verdict, String)] = list.map { t in
                 var lines: [String] = []
-                var window = WindowCloser.match(t, in: snap, trace: { lines.append($0) }).window
+                var window = t.windowID != nil && byID
+                    ? WindowCloser.window(withIDOf: t, trace: { lines.append($0) })
+                    : snap.flatMap { WindowCloser.match(t, in: $0, trace: { lines.append($0) }).window }
                 // Only windows with a close button of their own get buttons: floating video
                 // tiles, panels and overlays have nothing for MC Close to press.
                 if let w = window, AX.element(w, kAXCloseButtonAttribute) == nil {
@@ -394,21 +423,28 @@ final class WindowButtonsOverlay: NSObject {
                     ?? frame.map { NativeControls.standard(windowSize: $0.size) }
                 // One line per window per visit, so a glitch can be explained (titles stay hidden).
                 var detail = "thumbnail \(Int(t.frame.width))x\(Int(t.frame.height)) at \(Int(t.frame.minX)),\(Int(t.frame.minY))"
-                    + (t.appBundleID.map { " (\($0))" } ?? "") + "; " + lines.joined(separator: "; ")
+                    + (t.appBundleID.map { " (\($0))" } ?? "")
+                    + (t.spaceID.map { " space \($0)" } ?? "") + "; " + lines.joined(separator: "; ")
                 if let f = frame { detail += "; window \(Int(f.width))x\(Int(f.height))" }
                 if let n = native {
                     detail += "; controls at \(Int(n.closeCenter.x)),\(Int(n.closeCenter.y)) size \(Int(n.diameter))"
                 }
                 detail += window == nil ? "; no buttons" : "; buttons on"
-                return (Self.key(t), Verdict(ok: window != nil, native: native, windowFrame: frame), detail)
+                return (t, Verdict(ok: window != nil, native: native, windowFrame: frame), detail)
             }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.checking = false
-                for (k, v, detail) in results {
+                for (t, v, detail) in results {
+                    let k = t.key
                     self.verdicts[k] = v
-                    self.rechecked.insert(k)
-                    self.logOnce(k + "check", "overlay check: " + detail)
+                    if !v.ok && t.windowID != nil && byID {
+                        // Its app may not list it yet (opened from a full-screen app): look again soon.
+                        self.retryAt[k] = Date().addingTimeInterval(0.25)
+                    } else {
+                        self.rechecked.insert(k)
+                    }
+                    self.logOnce(k + (v.ok ? "ok" : "no"), "overlay check: " + detail)
                 }
                 self.lastRead = .distantPast   // redraw with the answers
             }

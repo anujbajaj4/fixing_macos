@@ -55,6 +55,30 @@ enum AX {
         return AXUIElementGetPid(el, &pid) == .success ? pid : nil
     }
 
+    /// A number attribute (macOS 27's thumbnails keep their window's ID in "wid").
+    static func uint32(_ el: AXUIElement, _ attr: String) -> UInt32? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &value) == .success,
+              let n = value as? NSNumber, n.int64Value > 0, n.int64Value <= Int64(UInt32.max) else { return nil }
+        return n.uint32Value
+    }
+
+    /// `_AXUIElementGetWindow`: a window element's CGWindowID. Private (yabai, AltTab and
+    /// Hammerspoon rely on it), so it's looked up at run time; if a macOS drops it,
+    /// `canReadWindowIDs` is false and windows are matched by title as before.
+    private typealias GetWindowFn = @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError
+    private static let getWindow: GetWindowFn? = {
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_AXUIElementGetWindow") else { return nil }   // RTLD_DEFAULT
+        return unsafeBitCast(sym, to: GetWindowFn.self)
+    }()
+    static var canReadWindowIDs: Bool { getWindow != nil }
+
+    static func windowID(_ window: AXUIElement) -> UInt32? {
+        guard let getWindow else { return nil }
+        var id: CGWindowID = 0
+        return getWindow(window, &id) == .success && id != 0 ? id : nil
+    }
+
     /// "AXButton/AXSomething" for the log.
     static func describe(_ el: AXUIElement) -> String {
         let role = string(el, kAXRoleAttribute) ?? "?"
@@ -72,7 +96,13 @@ struct Thumbnail {
     let title: String
     let frame: CGRect   // top-left–origin global coordinates
     var appBundleID: String? = nil   // macOS 27 tells us the app in the thumbnail's identifier
+    var windowID: UInt32? = nil      // ...and the window's CGWindowID ("wid")
+    var spaceID: Int? = nil          // ...and its Space
     var native: NativeControls? = nil // where the window's own controls are, once measured
+
+    /// Identifies the thumbnail's window across reads: its window ID when known (titles
+    /// change, e.g. Terminal's spinner), else app and title.
+    var key: String { windowID.map { "w\($0)" } ?? ((appBundleID ?? "") + "\u{1}" + title) }
 }
 
 enum WindowCloser {
@@ -80,6 +110,9 @@ enum WindowCloser {
         NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock")
             .first?.processIdentifier
     }
+
+    /// Can windows be matched to thumbnails by window ID on this macOS?
+    static var canReadWindowIDs: Bool { AX.canReadWindowIDs }
 
     /// Mouse position in the same top-left–origin coordinates the AX API uses.
     static func mouseLocation() -> CGPoint {
@@ -91,7 +124,11 @@ enum WindowCloser {
     /// Why not ask "what is under the pointer" (AXUIElementCopyElementAtPosition)? In
     /// Mission Control that looks straight through the thumbnails and returns the real
     /// window underneath (seen on macOS 15), so we list the thumbnails and hit-test ourselves.
-    static func missionControlThumbnails() -> [Thumbnail] {
+    ///
+    /// On macOS 27 the tree also holds the layouts of the Spaces Mission Control isn't showing
+    /// (overlapping the real one); unless `includeHidden`, only thumbnails whose window is on
+    /// screen are returned.
+    static func missionControlThumbnails(includeHidden: Bool = false) -> [Thumbnail] {
         var found: [Thumbnail] = []
 
         func walk(_ el: AXUIElement, depth: Int, ancestors: [String]) {
@@ -106,7 +143,9 @@ enum WindowCloser {
                ThumbnailFilter.isWindowThumbnail(role: role, ancestorTitles: ancestors, identifier: identifier),
                let frame = AX.frame(el), frame.width > 20, frame.height > 20 {
                 found.append(Thumbnail(element: el, title: title, frame: frame,
-                                       appBundleID: MissionControl27.bundleID(fromThumbnailIdentifier: identifier)))
+                                       appBundleID: MissionControl27.bundleID(fromThumbnailIdentifier: identifier),
+                                       windowID: AX.uint32(el, MissionControl27.windowIDAttribute),
+                                       spaceID: MissionControl27.spaceID(fromThumbnailIdentifier: identifier)))
                 return   // nothing to find inside a thumbnail
             }
             let next = title.isEmpty ? ancestors : [title] + ancestors
@@ -126,7 +165,17 @@ enum WindowCloser {
         for group in missionControlDisplayGroups() {
             walk(group, depth: 1, ancestors: [])
         }
-        return found
+        guard !includeHidden, found.contains(where: { $0.windowID != nil }) else { return found }
+        let shown = ShownTiles.shown(windowIDs: found.map(\.windowID), onscreen: onscreenWindowIDs())
+        return zip(found, shown).filter { $0.1 }.map { $0.0 }
+    }
+
+    /// IDs of the windows on screen. During Mission Control: the windows of the Space it shows.
+    /// (IDs need no Screen Recording permission; only window names would.)
+    static func onscreenWindowIDs() -> Set<UInt32> {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        return Set(list.compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value })
     }
 
     /// WindowManager's "mc.display" groups (present only while Mission Control is open, macOS 27).
@@ -145,12 +194,36 @@ enum WindowCloser {
         Geometry.index(of: point, in: thumbnails.map(\.frame)).map { thumbnails[$0] }
     }
 
-    /// Match a thumbnail to the app's real window by title.
-    /// Returns the window when exactly one fits. When several fit equally well, returns
-    /// them all as `ambiguous` (an app-level action can still act if they share one app).
+    /// The real window behind a thumbnail. macOS 27 thumbnails carry their window's ID, which
+    /// settles it; otherwise (macOS 15) the window is matched by title. Returns the window when
+    /// exactly one fits. When several fit equally well, returns them all as `ambiguous` (an
+    /// app-level action can still act if they share one app).
     static func realWindows(for thumb: Thumbnail, trace: ((String) -> Void)? = nil)
         -> (window: AXUIElement?, ambiguous: [AXUIElement]) {
-        match(thumb, in: snapshot(), trace: trace)
+        if thumb.windowID != nil && canReadWindowIDs {
+            return (window(withIDOf: thumb, trace: trace), [])
+        }
+        return match(thumb, in: snapshot(), trace: trace)
+    }
+
+    /// The window whose ID the thumbnail carries, among its app's windows. nil if the app
+    /// doesn't list it (yet: opening Mission Control from a full-screen app, the shown
+    /// windows appear about half a second late).
+    static func window(withIDOf thumb: Thumbnail, trace: ((String) -> Void)? = nil) -> AXUIElement? {
+        guard let id = thumb.windowID else { return nil }
+        let apps = thumb.appBundleID.map { NSRunningApplication.runningApplications(withBundleIdentifier: $0) }
+            ?? NSWorkspace.shared.runningApplications.filter { $0.activationPolicy != .prohibited }
+        for app in apps {
+            let appElement = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(appElement, 0.3) // don't hang on a frozen app
+            let windows = AX.elements(appElement, kAXWindowsAttribute)
+            if let i = ShownTiles.index(of: id, in: windows.map(AX.windowID)) {
+                trace?("window \(id) found by its ID")
+                return windows[i]
+            }
+        }
+        trace?("window \(id) not listed by its app (yet)")
+        return nil
     }
 
     /// Every window of every normal, visible app, read once, so many thumbnails can be
@@ -162,16 +235,8 @@ enum WindowCloser {
         var regular: [Bool] = []   // a Dock app (menu-bar-style "accessory" apps are false)
     }
 
-    /// Windows seen before, per app. macOS's accessibility API only lists an app's windows on
-    /// the space you're in, so from a full-screen app Mission Control shows windows it can't
-    /// see. A window element stays valid on other spaces, so remembering it lets MC Close
-    /// still match those thumbnails and press the window's buttons.
-    private static var known: [pid_t: [AXUIElement]] = [:]
-    private static let knownLock = NSLock()
-
     static func snapshot() -> WindowSnapshot {
         var snap = WindowSnapshot()
-        var running: Set<pid_t> = []
         // Menu-bar-style apps (e.g. Wispr Flow) can have normal windows too; they're only
         // considered when the thumbnail itself names the app (see `match`).
         for app in NSWorkspace.shared.runningApplications
@@ -179,15 +244,7 @@ enum WindowCloser {
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(appElement, 0.3) // don't hang on a frozen app
             let appName = app.localizedName ?? ""
-            let pid = app.processIdentifier
-            running.insert(pid)
-            let listed = AX.elements(appElement, kAXWindowsAttribute)
-            knownLock.lock(); let remembered = known[pid] ?? []; knownLock.unlock()
-            // Remembered windows not listed now (on another space) and still open.
-            let elsewhere = remembered.filter { r in !listed.contains { CFEqual($0, r) } && AX.frame(r) != nil }
-            let all = listed + elsewhere
-            knownLock.lock(); known[pid] = Array(all.suffix(60)); knownLock.unlock()
-            for window in all {
+            for window in AX.elements(appElement, kAXWindowsAttribute) {
                 // Invisible helper windows are often tiny; they're never what a thumbnail shows.
                 let frame = AX.frame(window)
                 if let f = frame, f.width < 40 || f.height < 30 { continue }
@@ -201,13 +258,7 @@ enum WindowCloser {
                     size: frame?.size))
             }
         }
-        knownLock.lock(); known = known.filter { running.contains($0.key) }; knownLock.unlock()
         return snap
-    }
-
-    /// Called at launch: get to know every app's windows on the current space straight away.
-    static func warmUp() {
-        DispatchQueue.global(qos: .utility).async { _ = snapshot() }
     }
 
     /// Where a window's own close/minimize/zoom controls are, relative to its top-left corner,

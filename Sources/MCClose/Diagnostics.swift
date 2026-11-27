@@ -45,6 +45,17 @@ enum Diagnostics {
                      + (active ? " (by \(source))" : "")
                      + "; pointer \(Int(mouse.x)),\(Int(mouse.y)); \(thumbs.count) window thumbnails; pointer on "
                      + (hit.map { "one (\(Log.title($0.title)))" } ?? "none")]
+        // macOS 27: every Space's thumbnails are in the tree; which ones are on screen?
+        let every = WindowCloser.missionControlThumbnails(includeHidden: true)
+        if every.contains(where: { $0.windowID != nil }) {
+            let onscreen = WindowCloser.onscreenWindowIDs()
+            lines.append("  thumbnails in the tree (window ID, Space, on screen, frame); window IDs readable: \(WindowCloser.canReadWindowIDs):")
+            lines += every.map { t in
+                "    \(t.appBundleID ?? "?") \(t.windowID.map(String.init) ?? "-") space \(t.spaceID.map(String.init) ?? "-") "
+                    + "\(t.windowID.map { onscreen.contains($0) ? "shown" : "hidden" } ?? "?") "
+                    + "\(Int(t.frame.width))x\(Int(t.frame.height)) at \(Int(t.frame.minX)),\(Int(t.frame.minY))"
+            }
+        }
         if let pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier {
             lines.append("  Dock layout check says: \(MissionControlWatcher.dockLooksLikeMissionControl(pid: pid) ? "open" : "closed")")
             lines += dockTree(pid: pid)

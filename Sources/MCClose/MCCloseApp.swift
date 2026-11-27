@@ -297,13 +297,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if active { self?.overlay.start() } else { self?.overlay.leave() }
         }
         watcher.start()
-
-        // macOS only shows MC Close the windows on the current space, so it remembers the
-        // windows of every space it has seen: now, and each time you switch spaces.
-        WindowCloser.warmUp()
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
-        ) { _ in WindowCloser.warmUp() }
     }
 
     static func diagnose() {

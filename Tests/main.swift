@@ -143,6 +143,73 @@ check(ThumbnailSanity.check([big, other, tucked, speck, edge]) == [.keep, .keep,
       "drops tiny placeholders and ones tucked inside a bigger thumbnail, keeps neighbours")
 check(ThumbnailSanity.check([big, big]) == [.keep, .keep], "two equal thumbnails don't cancel each other")
 
+// MARK: macOS 27: which thumbnails are on screen, and which window each one is
+// WindowManager's tree holds every Space's layout at once (here Desktop 1 = space 5,
+// Desktop 2 = space 6, a full-screen app = space 401); only the shown Space's windows are on screen.
+struct Tile { let id: String; let wid: UInt32; let frame: CGRect }
+// fromDesktop2: captured on macOS 27.2.1 (apps renamed, titles left out)
+let fromDesktop2 = [
+    Tile(id: "com.example.app1.space.5", wid: 91, frame: CGRect(x: 18, y: 346, width: 470, height: 268)),
+    Tile(id: "com.example.app2.space.5", wid: 141, frame: CGRect(x: 500, y: 110, width: 470, height: 268)),
+    Tile(id: "com.example.app3.space.5", wid: 5539, frame: CGRect(x: 982, y: 307, width: 470, height: 268)),
+    Tile(id: "com.example.app4.space.5", wid: 7655, frame: CGRect(x: 625, y: 591, width: 470, height: 268)),
+    Tile(id: "com.example.app5.space.5", wid: 10303, frame: CGRect(x: 403, y: 631, width: 207, height: 159)),
+    Tile(id: "com.example.app6.space.5", wid: 8207, frame: CGRect(x: 19, y: 629, width: 368, height: 230)),
+    Tile(id: "com.example.app7.space.6", wid: 98, frame: CGRect(x: 551, y: 111, width: 442, height: 252)),
+    Tile(id: "com.example.app8.space.6", wid: 9154, frame: CGRect(x: 19, y: 110, width: 406, height: 246)),
+    Tile(id: "com.example.app9.space.6", wid: 9702, frame: CGRect(x: 18, y: 621, width: 213, height: 239)),
+    Tile(id: "com.example.app9.space.6", wid: 8574, frame: CGRect(x: 200, y: 370, width: 337, height: 239)),
+    Tile(id: "com.example.app10.space.6", wid: 10814, frame: CGRect(x: 1308, y: 161, width: 138, height: 138)),
+    Tile(id: "com.example.app11.space.6", wid: 8373, frame: CGRect(x: 1007, y: 337, width: 442, height: 252)),
+    Tile(id: "com.example.app12.space.6", wid: 1494, frame: CGRect(x: 552, y: 433, width: 442, height: 252)),
+    Tile(id: "com.example.app13.space.6", wid: 279, frame: CGRect(x: 1007, y: 606, width: 442, height: 252)),
+    Tile(id: "com.example.app14.space.6", wid: 8571, frame: CGRect(x: 597, y: 704, width: 258, height: 150)),
+    Tile(id: "com.example.app13.space.401", wid: 10082, frame: CGRect(x: 224, y: 176, width: 1022, height: 642))
+]
+let fromDesktop2Onscreen: Set<UInt32> = [98, 279, 1494, 8373, 8571, 8574, 9154, 9702, 10814]
+// fromFullScreen: captured on macOS 27.2.1 (apps renamed, titles left out)
+let fromFullScreen = [
+    Tile(id: "com.example.app1.space.5", wid: 91, frame: CGRect(x: 19, y: 204, width: 464, height: 265)),
+    Tile(id: "com.example.app2.space.5", wid: 141, frame: CGRect(x: 500, y: 376, width: 464, height: 265)),
+    Tile(id: "com.example.app3.space.5", wid: 5539, frame: CGRect(x: 986, y: 318, width: 464, height: 265)),
+    Tile(id: "com.example.app4.space.5", wid: 7655, frame: CGRect(x: 983, y: 596, width: 464, height: 265)),
+    Tile(id: "com.example.app5.space.5", wid: 10303, frame: CGRect(x: 767, y: 202, width: 205, height: 157)),
+    Tile(id: "com.example.app6.space.5", wid: 8207, frame: CGRect(x: 50, y: 612, width: 363, height: 227)),
+    Tile(id: "com.example.app7.space.6", wid: 98, frame: CGRect(x: 605, y: 203, width: 417, height: 238)),
+    Tile(id: "com.example.app8.space.6", wid: 9154, frame: CGRect(x: 209, y: 203, width: 383, height: 232)),
+    Tile(id: "com.example.app9.space.6", wid: 9702, frame: CGRect(x: 18, y: 451, width: 200, height: 225)),
+    Tile(id: "com.example.app9.space.6", wid: 8574, frame: CGRect(x: 234, y: 633, width: 318, height: 225)),
+    Tile(id: "com.example.app10.space.6", wid: 10814, frame: CGRect(x: 1316, y: 206, width: 130, height: 130)),
+    Tile(id: "com.example.app11.space.6", wid: 8373, frame: CGRect(x: 1035, y: 369, width: 417, height: 238)),
+    Tile(id: "com.example.app12.space.6", wid: 1494, frame: CGRect(x: 568, y: 457, width: 417, height: 238)),
+    Tile(id: "com.example.app13.space.6", wid: 279, frame: CGRect(x: 1001, y: 621, width: 417, height: 238)),
+    Tile(id: "com.example.app14.space.6", wid: 8571, frame: CGRect(x: 568, y: 716, width: 244, height: 141)),
+    Tile(id: "com.example.app13.space.401", wid: 10082, frame: CGRect(x: 287, y: 260, width: 896, height: 563))
+]
+let fromFullScreenOnscreen: Set<UInt32> = [91, 141, 5539, 7655, 8207, 10303]
+func shownSpaces(_ tiles: [Tile], _ onscreen: Set<UInt32>) -> Set<Int> {
+    let shown = ShownTiles.shown(windowIDs: tiles.map { $0.wid }, onscreen: onscreen)
+    return Set(zip(tiles, shown).filter { $0.1 }.compactMap { MissionControl27.spaceID(fromThumbnailIdentifier: $0.0.id) })
+}
+check(shownSpaces(fromDesktop2, fromDesktop2Onscreen) == [6], "from Desktop 2: only Desktop 2's thumbnails are shown")
+check(shownSpaces(fromFullScreen, fromFullScreenOnscreen) == [5],
+      "from a full-screen app: the desktop behind it is shown, not the full-screen Space's own tile")
+check(ShownTiles.shown(windowIDs: fromDesktop2.map { $0.wid }, onscreen: fromDesktop2Onscreen).filter { $0 }.count == 9,
+      "from Desktop 2: nine windows get buttons")
+check(ShownTiles.shown(windowIDs: [nil, 7], onscreen: []) == [true, false], "thumbnails without a window ID (macOS 15) are always kept")
+// Both Spaces' layouts overlap: the old check dropped real windows as "inside" another Space's tiles.
+let allFrames = fromDesktop2.map { $0.frame }
+check(ThumbnailSanity.check(allFrames).contains(.insideAnother), "the overlapping layouts trip the old overlap check")
+let shownFrames = zip(fromDesktop2, ShownTiles.shown(windowIDs: fromDesktop2.map { $0.wid }, onscreen: fromDesktop2Onscreen)).filter { $0.1 }.map { $0.0.frame }
+check(ThumbnailSanity.check(shownFrames, identified: shownFrames.map { _ in true }).allSatisfy { $0 == .keep },
+      "every shown thumbnail with a window ID is kept")
+check(ThumbnailSanity.check([big, tucked], identified: [true, true]) == [.keep, .keep], "a thumbnail naming its window is never 'inside another'")
+check(ThumbnailSanity.check([big, speck], identified: [true, true]) == [.keep, .tooSmall], "...but tiny ones are still dropped")
+check(ShownTiles.index(of: 8574, in: [nil, 9702, 8574]) == 2, "two windows of one app: the one with the thumbnail's ID")
+check(ShownTiles.index(of: 8574, in: [nil, 9702]) == nil, "window not listed (yet): no match, never a guess")
+check(MissionControl27.spaceID(fromThumbnailIdentifier: "com.apple.TextEdit.space.401") == 401, "space from identifier")
+check(MissionControl27.spaceID(fromThumbnailIdentifier: "mc.spaces.add") == nil, "controls have no space")
+
 // MARK: ButtonLayout (fixed buttons on every thumbnail)
 let thumbA = CGRect(x: 100, y: 200, width: 400, height: 300)
 let thumbB = CGRect(x: 600, y: 200, width: 400, height: 300)
