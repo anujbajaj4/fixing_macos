@@ -23,7 +23,7 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Toggle("Move buttons with the windows", isOn: Binding(
                     get: { state.moveWithWindows }, set: { state.setMoveWithWindows($0) }))
-                Text("As Mission Control opens and closes, the buttons travel with the windows. Turn this off to have them simply fade in and out. MC Close also follows Reduce motion in your Mac's Accessibility settings.")
+                Text("As Mission Control opens and closes, and as its thumbnails move, the buttons travel with the windows. Turn this off to have them simply fade in and out and jump to the thumbnails' new places. MC Close also follows Reduce motion in your Mac's Accessibility settings.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
