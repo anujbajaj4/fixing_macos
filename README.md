@@ -1,21 +1,24 @@
 # MC Close downloads
 
-Updated 2026-11-26 (UTC), recorded once a day by `.github/workflows/stats.yml`.
+Updated 2026-11-27 (UTC), recorded once a day by `.github/workflows/stats.yml`.
 
 | | App (.dmg) downloads |
 |---|---|
-| Total | **29** |
-| Since yesterday | +5 |
+| Total | **42** |
+| Since yesterday | +13 |
 | Last 7 days | n/a |
 | Installer script fetched | 14 |
 
-New downloads per day, last 60 days: `█`
+New downloads per day, last 60 days: `▃█`
 
 ## By version
 
 | Version | Downloads |
 |---|---|
-| v1.4.0 | 5 |
+| v1.5.0 | 3 |
+| v1.4.2 | 4 |
+| v1.4.1 | 5 |
+| v1.4.0 | 6 |
 | v1.3.0 | 9 |
 | v1.2.0 | 4 |
 | v1.1.0 | 7 |
