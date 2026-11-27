@@ -294,6 +294,12 @@ struct NativeControls: Equatable {
     var diameter: CGFloat      // of one control
     var spacing: CGFloat       // centre to centre
     var windowSize: CGSize
+
+    /// macOS's usual window controls, for a window whose own couldn't be measured, so its
+    /// buttons are scaled like every other window's instead of drawn full size.
+    static func standard(windowSize: CGSize) -> NativeControls {
+        NativeControls(closeCenter: CGPoint(x: 20, y: 18), diameter: 13, spacing: 20, windowSize: windowSize)
+    }
 }
 
 /// Where the buttons sit on each thumbnail. With the window's own controls measured, they

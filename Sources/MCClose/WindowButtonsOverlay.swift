@@ -380,17 +380,24 @@ final class WindowButtonsOverlay: NSObject {
             let snap = WindowCloser.snapshot()
             let results: [(String, Verdict, String)] = list.map { t in
                 var lines: [String] = []
-                let window = WindowCloser.match(t, in: snap, trace: { lines.append($0) }).window
-                let native = window.flatMap(WindowCloser.nativeControls)
+                var window = WindowCloser.match(t, in: snap, trace: { lines.append($0) }).window
+                // Only windows with a close button of their own get buttons: floating video
+                // tiles, panels and overlays have nothing for MC Close to press.
+                if let w = window, AX.element(w, kAXCloseButtonAttribute) == nil {
+                    lines.append("window has no close button")
+                    window = nil
+                }
                 let frame = window.flatMap { AX.frame($0) }
+                // If its controls can't be measured, assume macOS's standard ones, scaled like
+                // every other window's, rather than a full-size row.
+                let native = window.flatMap(WindowCloser.nativeControls)
+                    ?? frame.map { NativeControls.standard(windowSize: $0.size) }
                 // One line per window per visit, so a glitch can be explained (titles stay hidden).
                 var detail = "thumbnail \(Int(t.frame.width))x\(Int(t.frame.height)) at \(Int(t.frame.minX)),\(Int(t.frame.minY))"
                     + (t.appBundleID.map { " (\($0))" } ?? "") + "; " + lines.joined(separator: "; ")
                 if let f = frame { detail += "; window \(Int(f.width))x\(Int(f.height))" }
                 if let n = native {
-                    detail += "; own controls at \(Int(n.closeCenter.x)),\(Int(n.closeCenter.y)) size \(Int(n.diameter))"
-                } else if window != nil {
-                    detail += "; own controls not found: default corner"
+                    detail += "; controls at \(Int(n.closeCenter.x)),\(Int(n.closeCenter.y)) size \(Int(n.diameter))"
                 }
                 detail += window == nil ? "; no buttons" : "; buttons on"
                 return (Self.key(t), Verdict(ok: window != nil, native: native, windowFrame: frame), detail)

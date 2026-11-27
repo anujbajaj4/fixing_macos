@@ -171,6 +171,9 @@ check(abs((nr[1].midX - nr[0].midX) - 10.5) < 0.01, "spacing follows the window'
 let offNative = NativeControls(closeCenter: CGPoint(x: 400, y: 600), diameter: 14, spacing: 20, windowSize: CGSize(width: 1000, height: 700))
 check(ButtonLayout.rects(forThumbnail: thumbN, count: 4, native: offNative) == ButtonLayout.rects(forThumbnail: thumbN, count: 4),
       "a measurement that wouldn't land in the top-left corner falls back to the default row")
+let std = ButtonLayout.rects(forThumbnail: thumbN, count: 4, native: .standard(windowSize: CGSize(width: 1000, height: 700)))
+check(abs(std[0].width - 9) < 0.01 && std[0].midX < thumbN.minX + 20,
+      "unmeasured controls are scaled like the rest (no full-size row on a shrunken window)")
 let bigThumb = CGRect(x: 0, y: 0, width: 800, height: 560)   // scale 0.8
 let nb = ButtonLayout.rects(forThumbnail: bigThumb, count: 4, native: native)
 check(abs(nb[0].width - 11.2) < 0.01 && abs((nb[1].midX - nb[0].midX) - 16) < 0.01 && abs(nb[2].midX - 48) < 0.01,
