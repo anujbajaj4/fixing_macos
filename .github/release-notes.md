@@ -1,6 +1,14 @@
 Control any window right from Mission Control: point at it, then use the buttons on its corner or a shortcut.
 
-## What's new in 1.4.2
+## What's new in 1.5.0
+- **Buttons only on the windows you can see.** On macOS 27, Mission Control keeps the layouts of all your Spaces at once, stacked on top of each other, and earlier versions drew buttons for all of them: rows floated over empty wallpaper, and real windows were skipped because they overlapped another Space's windows. MC Close now draws buttons only on the windows Mission Control is showing, so every visible window gets its own.
+- **Buttons when you start from a full-screen app.** Opening Mission Control from a full-screen app now gives every window shown its buttons, within about a second. (This replaces 1.4.2's approach of remembering windows from other Spaces, which put buttons on the wrong thumbnails.)
+- **Always the right window.** macOS 27 tells MC Close exactly which window each thumbnail is, so MC Close no longer guesses from titles there (which failed for Terminal, Chrome, Activity Monitor and others). Two windows of one app, or several Finder windows, each get their own buttons.
+- **Buttons follow the thumbnails.** When the row of desktops at the top opens and the thumbnails shrink and move, the buttons now glide along with them.
+- **The first signed release.** Updating to 1.5.0 asks for the Accessibility permission once more; from then on, updates keep it.
+- "Diagnose Mission Control…" now also records each window's Space and whether it's on screen.
+
+## In 1.4.2
 - **Buttons when you start from a full-screen app.** macOS only tells apps about windows on the space you're in, so opening Mission Control from a full-screen app (say, Claude in full screen) left every window without buttons. MC Close now remembers the windows of each space you've visited and can still use them. A window opened while you never left full screen gets buttons once you've visited its space.
 
 ## In 1.4.1
